@@ -1,0 +1,9 @@
+[project]
+name = "relay"
+version = "0.1.0"
+description = "Goal-to-action agent: one plain-language goal, an approved plan, real email and calendar tools."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

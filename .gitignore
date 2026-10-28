@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+relay.db
+token.json
+credentials.json
+.pytest_cache/
+
+# Local backend data: real documents and contacts are the user's, not the repo's.
+# The samples are committed; anything else you drop in here is not.
+documents/*
+!documents/README.md
+!documents/Q2 report FINAL.txt
+!documents/Q3 report FINAL.txt
+!documents/Q3 report draft.txt
+contacts.json

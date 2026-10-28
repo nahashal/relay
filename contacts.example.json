@@ -1,0 +1,6 @@
+[
+  { "name": "Rahul Menon",  "email": "rahul.menon@example.com",  "note": "Finance" },
+  { "name": "Rahul Shetty", "email": "rahul.shetty@example.com", "note": "Design team" },
+  { "name": "Anu Prakash",  "email": "anu.prakash@example.com",  "note": "Finance" },
+  { "name": "Priya Nair",   "email": "priya.nair@example.com",   "note": "Ops" }
+]

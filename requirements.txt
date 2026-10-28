@@ -1,0 +1,25 @@
+# Reasoning
+google-genai>=1.0.0
+
+# Google Workspace (Gmail, Calendar, Drive, People)
+google-api-python-client>=2.140.0
+google-auth-oauthlib>=1.2.0
+
+# Plans are validated data, not free text
+pydantic>=2.8.0
+
+# Approval UI backend
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# Timezone data. Windows ships no system tz database, so zoneinfo raises
+# ZoneInfoNotFoundError for "Asia/Kolkata" without this. Needed at run time,
+# not just for tests - date resolution is on the main path.
+tzdata>=2024.1
+
+# No python-dotenv: relay/config.py reads .env in 30 lines of stdlib,
+# and one less dependency on the path to a client handover is worth it.
+
+# Tests
+pytest>=8.3.0
+httpx>=0.27.0

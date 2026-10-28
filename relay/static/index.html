@@ -1,0 +1,775 @@
+<!doctype html>
+<!--
+  RELAY approval UI.
+
+  LESSON 18 - borrow the structure, not the pixels.
+  The design language comes from the MIT-licensed "print studio" template
+  (8bsite/print-studio-website-template): two flat inks, full-width bands,
+  halftone dots drawn in CSS. Almost none of that
+  template was ABOUT an approval screen, and copying its sections would have
+  produced a brochure with buttons. One idea transferred because it already
+  fitted: an approval card IS a job ticket - a run priced out, waiting for a
+  signature - so the scalloped perforation below is the template's own mask,
+  reused unchanged. Its scroll animations did not transfer: an approval screen
+  is read once and acted on, and motion would be in the way of a decision.
+
+  LESSON 19 - keep the client dumb.
+  The whole client is render(status). The server owns every decision about what
+  happens next; this file only draws what it is handed. That is deliberate:
+  branching done here would be logic the tests and the terminal demo never
+  exercise, and it keeps one promise honest - the browser cannot approve
+  anything the server did not offer, because it has no idea what comes next.
+
+  LESSON 25 - a type change is a legibility change.
+  The whole page is set in one monospace family. That is a look, but on this
+  particular screen it is also a decision about reading: this is where someone
+  checks an address and a timestamp BEFORE authorising a real send, so a
+  misread character is not a cosmetic bug. Monospace helps there - l, 1 and I
+  are plainly different, the zero is dotted, and columns of times line up - but
+  it runs wide, so display sizes come DOWN and large text gets negative
+  tracking to close the gaps a fixed advance leaves. Weight carries the
+  contrast that three separate faces used to carry.
+
+  No build step and no framework, same as the template. One file.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RELAY</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20rx%3D'14'%20fill%3D'%2311138d'%2F%3E%3Ctext%20x%3D'32'%20y%3D'45'%20font-family%3D'Arial%2CHelvetica%2Csans-serif'%20font-size%3D'34'%20font-weight%3D'700'%20text-anchor%3D'middle'%20fill%3D'%23ed008e'%3ER%3C%2Ftext%3E%3C%2Fsvg%3E">
+<style>
+:root {
+  /* The template's two inks, kept exactly: they carry the whole look. */
+  --ink-blue: #11138d;
+  --ink-pink: #ed008e;
+  --paper: #f3f3fa;
+  --near-black: #07061f;
+
+  /* One monospace family doing every job, with weight carrying the contrast
+     that three separate faces used to carry. JetBrains Mono because this is a
+     screen people READ before authorising a real send: it has a tall x-height,
+     a dotted zero and a slashed seven, and clearly different l / 1 / I - which
+     matters when the text being checked is an address and a timestamp.
+     The four aliases are kept so the rest of the stylesheet does not need to
+     know there is now only one face. */
+  --font-stack: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-display: var(--font-stack);
+  --font-head: var(--font-stack);
+  --font-body: var(--font-stack);
+  --font-mono: var(--font-stack);
+
+  --radius-pill: 999px;
+  --gutter: clamp(16px, 3.2vw, 40px);
+  --band: clamp(44px, 6vw, 88px);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ink-blue);
+  color: var(--paper);
+  font-family: var(--font-body);
+  /* Monospace runs wide, so this comes back down from the pixel sizing.
+     JetBrains Mono has a tall x-height and reads fine at 16-18px. */
+  font-size: clamp(15px, 0.3vw + 14px, 17px);
+  line-height: 1.65;
+  /* Back ON: this is an outline face, not a grid of squares, so aliasing it
+     would just make it ragged. The pixel faces wanted the opposite. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---- type scale, retuned for monospace metrics ----
+   Every glyph now occupies the same advance width, which changes two things.
+   Display sizes come DOWN, because a mono headline is far wider than a
+   proportional one at the same point size and the goal text is arbitrarily
+   long. And negative tracking comes back for large text only: at 50px the
+   fixed advance leaves visible gaps that tightening closes, while at body
+   size the same tightening would hurt. */
+.display { font-family: var(--font-head); font-weight: 800; line-height: 1.12; letter-spacing: -0.035em; font-size: clamp(26px, 3.6vw, 50px); margin: 0; }
+.heading { font-family: var(--font-head); font-weight: 700; line-height: 1.3; letter-spacing: -0.02em; font-size: clamp(17px, 0.7vw + 13px, 23px); margin: 0; }
+/* Uppercase monospace is what this style does best: wide tracking, no fuss. */
+.label { font-family: var(--font-display); font-size: 11px; font-weight: 700; line-height: 1.5; letter-spacing: 0.14em; text-transform: uppercase; }
+.lede { font-size: clamp(16px, 0.5vw + 13px, 19px); font-weight: 500; line-height: 1.55; letter-spacing: -0.01em; }
+.muted { opacity: 0.72; }
+/* Everything is monospace now, so .mono only needs to opt out of any local
+   size change - it no longer switches family. */
+.mono { font-family: var(--font-mono); font-size: 0.95em; line-height: 1.5; letter-spacing: 0; }
+
+/* ---- bands: full-width colour blocks, the template's main structural idea ---- */
+.band { padding: var(--band) var(--gutter); }
+.band--paper { background: var(--paper); color: var(--ink-blue); }
+.band--pink { background: var(--ink-pink); color: var(--near-black); }
+.wrap { max-width: 1120px; margin: 0 auto; }
+
+/* ---- halftone dots, drawn in CSS like the template's trails ---- */
+/* Square dots, not round: a halftone circle beside pixel type reads as a
+   different system. Hard colour stops keep the edges on the grid. */
+.dots {
+  height: 8px;
+  background:
+    linear-gradient(90deg, currentColor 0 8px, transparent 8px 16px) 0 0 / 16px 8px repeat-x;
+  opacity: 0.4;
+}
+
+/* ---- header ---- */
+header.top {
+  display: flex; align-items: center; gap: 16px;
+  padding: 18px var(--gutter);
+  border-bottom: 2px solid color-mix(in srgb, var(--paper) 25%, transparent);
+}
+.wordmark { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: -0.06em; }
+.wordmark span { color: var(--ink-pink); }
+
+/* ---- goal box ---- */
+.goal { display: grid; gap: 14px; margin-top: 28px; }
+.goal textarea {
+  /* Three lines of the example goal at phone width, with room to spare. */
+  width: 100%; min-height: 116px; padding: 18px 20px; resize: vertical;
+  border: 2px solid var(--ink-blue); border-radius: 18px;
+  background: #fff; color: var(--ink-blue);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.55;
+}
+.goal textarea:focus-visible { outline: 3px solid var(--ink-pink); outline-offset: 2px; }
+.examples { display: flex; flex-wrap: wrap; gap: 8px; }
+.example { min-height: 38px; padding: 0 16px; font-size: 13px; white-space: nowrap; }
+@media (max-width: 640px) {
+  /* A nowrap pill wider than the screen would scroll the page sideways. */
+  .example { white-space: normal; min-height: 0; padding: 8px 14px; text-align: left; }
+}
+
+/* ---- buttons: pill shaped, as in the template ---- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 52px; padding: 0 28px; border: 0; border-radius: var(--radius-pill);
+  background: var(--ink-pink); color: var(--near-black);
+  font-family: var(--font-body); font-size: 15px; font-weight: 700; letter-spacing: -0.01em;
+  cursor: pointer; text-decoration: none;
+}
+.btn--blue { background: var(--ink-blue); color: var(--paper); }
+.btn--ghost { background: transparent; color: inherit; box-shadow: inset 0 0 0 2px currentColor; }
+.btn--small { min-height: 40px; padding: 0 18px; font-size: 14px; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn:focus-visible { outline: 3px solid var(--near-black); outline-offset: 3px; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+
+/* ---- the plan, as a numbered run sheet ---- */
+.plan { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.step {
+  display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 16px;
+  padding: 14px 18px; border-radius: 12px;
+  background: color-mix(in srgb, var(--ink-blue) 6%, transparent);
+}
+/* A grid child will not shrink below its content by default, so a long
+   unbroken address pushes the gate label out of the row. min-width:0 lets it
+   shrink; overflow-wrap breaks the address rather than clipping it. */
+.step > span { min-width: 0; overflow-wrap: anywhere; }
+.step__no { font-family: var(--font-display); font-weight: 700; font-size: 17px; opacity: 0.5; font-variant-numeric: tabular-nums; }
+.step--done { background: color-mix(in srgb, var(--ink-blue) 12%, transparent); }
+.step--done .step__no { opacity: 1; }
+.step--current { background: var(--ink-pink); color: var(--near-black); }
+.step--current .step__no { opacity: 1; }
+/* Near-black at 60% on pink is noticeably fainter than the same value on the
+   blue band, so the current row gets its tool name back. */
+.step--current .step__tool { opacity: 0.85; }
+.step__tool { font-family: var(--font-mono); font-size: 13px; opacity: 0.6; letter-spacing: 0; }
+.step__gate { font-family: var(--font-display); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; line-height: 1.5; text-transform: uppercase; }
+
+/* ---- the approval card: a job ticket with a perforated top edge ---- */
+.ticket {
+  position: relative;
+  padding: clamp(26px, 3vw, 40px);
+  background: var(--paper); color: var(--ink-blue);
+  /* The template's .m-surface mask: scalloped circles along the top edge. */
+  mask: radial-gradient(circle 6px at 50% 0, transparent 95%, currentColor 100%) 0 0 / 20px 100% repeat-x;
+}
+.ticket__kicker { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
+.ticket__detail {
+  margin: 18px 0 0; padding: 18px 20px; white-space: pre-wrap;
+  border-left: 4px solid var(--ink-pink);
+  background: color-mix(in srgb, var(--ink-blue) 5%, transparent);
+  /* The email itself: the most important text on the page to read
+     accurately, so it stays a touch above body size. */
+  font-size: 15px; line-height: 1.6;
+}
+.ticket__rule { height: 3px; margin: 22px 0; background: repeating-linear-gradient(90deg, currentColor 0 6px, transparent 6px 12px); opacity: 0.35; }
+
+/* ---- questions ---- */
+.choices { display: grid; gap: 10px; margin: 18px 0 0; }
+.choice {
+  display: flex; align-items: center; gap: 12px; padding: 14px 18px;
+  border: 2px solid color-mix(in srgb, var(--near-black) 25%, transparent); border-radius: 14px;
+  background: color-mix(in srgb, #fff 55%, transparent); cursor: pointer;
+}
+.choice:has(input:checked) { border-color: var(--near-black); background: #fff; }
+.choice input { accent-color: var(--ink-blue); width: 20px; height: 20px; }
+.choice__label { font-weight: 500; }
+
+/* ---- edit panel: narrow controls only ---- */
+.edit { margin: 18px 0 0; padding: 20px; border-radius: 16px; background: color-mix(in srgb, var(--ink-blue) 7%, transparent); }
+.edit[hidden] { display: none; }
+.field { display: grid; gap: 6px; margin-bottom: 14px; }
+.field input, .field textarea, .field select {
+  padding: 12px 14px; border: 2px solid color-mix(in srgb, var(--ink-blue) 30%, transparent);
+  border-radius: 12px; background: #fff; color: var(--ink-blue);
+  font-family: var(--font-body); font-size: 15px;
+}
+.field textarea { min-height: 120px; resize: vertical; line-height: 1.5; }
+
+/* ---- stop states ---- */
+.outcome { display: grid; gap: 10px; }
+.stamp {
+  /* justify-self, not align-self: in a grid the inline axis is the one that
+     makes this shrink to its text instead of stretching the full width. */
+  display: inline-flex; align-items: center; gap: 10px; justify-self: start;
+  padding: 12px 24px; border-radius: var(--radius-pill);
+  font-family: var(--font-display); font-weight: 800; font-size: 17px; letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.stamp--done { background: var(--ink-blue); color: var(--paper); }
+.stamp--rejected, .stamp--blocked, .stamp--budget_hit { background: var(--near-black); color: var(--ink-pink); }
+.stamp--needs_input { background: var(--ink-pink); color: var(--near-black); }
+
+/* The steps RELAY planned but cannot do. Deliberately unlike the plan rows:
+   those record what happened, these are work that has not started. */
+.checklist { margin: 10px 0 0; padding-left: 22px; display: grid; gap: 8px; }
+.checklist li { padding-left: 6px; }
+
+
+/* Live mode must be impossible to miss: near-black band, pink text, the one
+   place on the page that is neither of the two inks on paper. */
+.live-banner {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px var(--gutter);
+  background: var(--near-black); color: var(--ink-pink);
+  font-weight: 700; letter-spacing: 0.02em;
+}
+.live-banner::before { content: ""; width: 12px; height: 12px; border-radius: 50%; background: var(--ink-pink); }
+/* A dry run is noteworthy but not dangerous, so it reads as information
+   rather than as a warning. */
+.live-banner--dry { background: var(--ink-blue); color: var(--paper); }
+.live-banner--dry::before { background: var(--paper); }
+
+.error { margin-top: 18px; padding: 14px 18px; border-radius: 12px; background: var(--near-black); color: var(--ink-pink); }
+[hidden] { display: none !important; }
+.spin { opacity: 0.55; }
+
+footer.foot { padding: 28px var(--gutter) 40px; font-size: 13px; line-height: 1.7; }
+footer.foot a { color: var(--ink-pink); }
+
+@media (max-width: 640px) {
+  /* Steps wrap to several lines on a phone, so the number sits at the top of
+     its row rather than floating halfway down the text. */
+  .step { grid-template-columns: 32px 1fr; align-items: start; }
+  .step__gate { grid-column: 2; }
+  .wordmark { font-size: 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="live-banner" id="live-banner" hidden>
+  Live mode: approving will send real email and book real calendar entries.
+</div>
+
+<header class="top">
+  <div class="wordmark">re<span>lay</span></div>
+</header>
+
+<!-- ---------- the goal ---------- -->
+<section class="band band--paper" id="goal-band">
+  <div class="wrap">
+    <p class="label">One goal in</p>
+    <h1 class="display">What needs<br>doing?</h1>
+    <div class="goal">
+      <label class="label" for="goal">Your goal, in plain language</label>
+      <textarea id="goal" placeholder="Email Rahul Menon the Q3 report and book a 30-minute review with him next week."></textarea>
+      <div class="examples">
+        <!-- Starters, not finished goals. Each drops a template in the box
+             for the user to fill in: the point is to show the KINDS of goal
+             RELAY takes, not to hand over four sentences that only work
+             against this particular folder and contact list. -->
+        <button class="btn btn--ghost btn--small example" data-example="Email [who] the [which file]">Send an email</button>
+        <button class="btn btn--ghost btn--small example" data-example="Book a 30-minute [what] with [who] next week">Book a meeting</button>
+        <button class="btn btn--ghost btn--small example" data-example="Tell [who] [what]">Send a quick message</button>
+        <button class="btn btn--ghost btn--small example" data-example="Plan [what]">Plan something</button>
+      </div>
+      <div class="actions">
+        <button class="btn" id="start">Plan this run</button>
+      </div>
+      <p class="muted" id="gate-note">Nothing is sent or booked until you approve it.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ---------- the plan ---------- -->
+<section class="band" id="plan-band" hidden>
+  <div class="wrap">
+    <p class="label">The plan</p>
+    <h2 class="heading" id="plan-goal"></h2>
+    <p class="muted" id="plan-window"></p>
+    <div class="dots" style="margin:22px 0"></div>
+    <ol class="plan" id="plan"></ol>
+  </div>
+</section>
+
+<!-- ---------- a question ---------- -->
+<section class="band band--pink" id="ask-band" hidden>
+  <div class="wrap">
+    <p class="label">RELAY needs an answer</p>
+    <h2 class="heading" style="margin-bottom:6px">It will not guess.</h2>
+    <div id="asks"></div>
+    <div class="actions">
+      <button class="btn btn--blue" id="send-answer">Send answer</button>
+    </div>
+  </div>
+</section>
+
+<!-- ---------- the approval ticket ---------- -->
+<section class="band" id="card-band" hidden>
+  <div class="wrap">
+    <p class="label" style="margin-bottom:18px">Approval needed</p>
+    <article class="ticket">
+      <div class="ticket__kicker">
+        <p class="label" id="card-step"></p>
+        <p class="label" id="card-tool"></p>
+      </div>
+      <h2 class="heading" id="card-intent"></h2>
+      <pre class="ticket__detail mono" id="card-detail"></pre>
+
+      <!-- slot picker: the search found several, so show several -->
+      <div id="slot-pick" hidden>
+        <div class="ticket__rule"></div>
+        <p class="label">Other free slots found</p>
+        <div class="choices" id="slots"></div>
+      </div>
+
+      <!-- narrow edit controls, not a free-text action editor -->
+      <div class="edit" id="edit-email" hidden>
+        <p class="label" style="margin-bottom:14px">Edit the email</p>
+        <div class="field">
+          <label class="label" for="edit-to">To</label>
+          <input id="edit-to" type="text">
+        </div>
+        <div class="field">
+          <label class="label" for="edit-subject">Subject</label>
+          <input id="edit-subject" type="text">
+        </div>
+        <div class="field">
+          <label class="label" for="edit-body">Body</label>
+          <textarea id="edit-body"></textarea>
+        </div>
+        <p class="muted" style="font-size:14px">Saving makes a new draft, so this needs approving again.</p>
+        <div class="actions">
+          <button class="btn btn--blue btn--small" id="save-edit">Save and re-approve</button>
+          <button class="btn btn--ghost btn--small" id="cancel-edit">Cancel</button>
+        </div>
+      </div>
+
+      <div class="ticket__rule"></div>
+      <div class="actions" id="card-actions">
+        <button class="btn" id="approve">Approve</button>
+        <button class="btn btn--ghost" id="edit">Edit</button>
+        <button class="btn btn--ghost" id="reject">Reject</button>
+        <button class="btn btn--ghost" id="revise">Reject &amp; replan</button>
+      </div>
+    </article>
+  </div>
+</section>
+
+<!-- ---------- the outcome ---------- -->
+<section class="band band--paper" id="done-band" hidden>
+  <div class="wrap outcome">
+    <p class="label">The run stopped</p>
+    <div class="stamp" id="stamp"></div>
+    <p class="lede" id="done-summary"></p>
+
+    <div id="checklist-block" hidden>
+      <p class="label" style="margin-top:8px">Over to you</p>
+      <ol class="checklist" id="checklist"></ol>
+    </div>
+    <div class="actions">
+      <button class="btn btn--blue" id="again">Start another run</button>
+    </div>
+  </div>
+</section>
+
+<p class="error" id="error" hidden></p>
+
+<footer class="foot">
+  <div class="wrap muted">
+    RELAY runs against a mock backend: no real email is sent and no real calendar is touched.
+    Design language from the <a href="https://github.com/8bsite/print-studio-website-template">print studio template</a> (MIT).
+  </div>
+</footer>
+
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+let runId = null;
+let status = null;
+
+async function call(path, body) {
+  $("error").hidden = true;
+  const options = body
+    ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+    : {};
+  const response = await fetch(path, options);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.detail || `${response.status} ${response.statusText}`);
+  }
+  return data;
+}
+
+function show(id, visible) { $(id).hidden = !visible; }
+
+function busy(on) {
+  document.querySelectorAll(".btn").forEach((b) => { b.disabled = on; });
+  document.body.classList.toggle("spin", on);
+}
+
+async function guard(work, button, pendingLabel) {
+  /* Reading a goal is a model call: two to four seconds during which the page
+     would otherwise look untouched. Dimming the buttons is too subtle - the
+     one that was clicked says what it is doing. */
+  const original = button ? button.textContent : null;
+  if (button && pendingLabel) button.textContent = pendingLabel;
+  busy(true);
+  try {
+    await work();
+  } catch (err) {
+    $("error").textContent = err.message;
+    $("error").hidden = false;
+  } finally {
+    busy(false);
+    if (button && original !== null) button.textContent = original;
+  }
+}
+
+/* ---------- rendering ---------- */
+
+/* Steps that are machinery rather than work: "note" is a step for the USER,
+   shown in the checklist instead, and "finish" is how a run ends, not a thing
+   anyone does. Both were appearing in the plan, so an all-manual goal listed
+   its five steps twice - once here and once under "Over to you". */
+const NOT_RELAY_WORK = ["note", "finish"];
+
+function renderPlan(s) {
+  const plan = s.plan || [];
+  /* The two bands answer different questions, so they must not share content:
+     this one is what RELAY does, the checklist is what you do. */
+  const mine = plan.filter((step) => !NOT_RELAY_WORK.includes(step.tool));
+  show("plan-band", mine.length > 0);
+  if (!mine.length) return;
+
+  $("plan-goal").textContent = s.goal || "";
+  $("plan-window").textContent = s.window ? `Window: ${s.window}` : "";
+
+  const current = s.card ? s.card.step_number : null;
+  $("plan").innerHTML = "";
+  for (const step of mine) {
+    const done = (s.completed_steps || []).includes(step.number);
+    const li = document.createElement("li");
+    li.className = "step" + (done ? " step--done" : "") + (step.number === current ? " step--current" : "");
+    const gate = ["send_email", "create_event"].includes(step.tool);
+    li.innerHTML =
+      `<span class="step__no">${step.number}</span>` +
+      `<span><span class="step__intent">${escapeHtml(step.intent)}</span><br>` +
+      `<span class="step__tool">${escapeHtml(step.tool)}</span></span>` +
+      `<span class="step__gate">${done ? "done" : gate ? "needs approval" : ""}</span>`;
+    $("plan").append(li);
+  }
+}
+
+function renderAsks(s) {
+  const asks = s.asks || [];
+  const awaiting = s.awaiting === "answer" && asks.length > 0;
+  show("ask-band", awaiting);
+  if (!awaiting) return;
+
+  $("asks").innerHTML = "";
+  asks.forEach((ask, index) => {
+    const block = document.createElement("div");
+    block.style.marginTop = "18px";
+    block.innerHTML = `<p class="lede">${escapeHtml(ask.text)}</p>`;
+
+    const holder = document.createElement("div");
+    holder.className = "choices";
+
+    if (ask.options && ask.options.length) {
+      /* Candidates the lookup returned: pick one, never type an address. */
+      ask.options.forEach((option, i) => {
+        const id = `ask-${index}-${i}`;
+        const row = document.createElement("label");
+        row.className = "choice";
+        row.innerHTML =
+          `<input type="radio" name="ask-${index}" id="${id}" value="${escapeAttr(option.value)}"${i === 0 ? " checked" : ""}>` +
+          `<span class="choice__label">${escapeHtml(option.label)}</span>`;
+        holder.append(row);
+      });
+    } else {
+      /* No candidates, so there is nothing to pick from: free text. */
+      const row = document.createElement("div");
+      row.className = "field";
+      row.innerHTML = `<input type="text" name="ask-${index}" placeholder="Your answer">`;
+      holder.append(row);
+    }
+    block.append(holder);
+    block.dataset.kind = ask.kind;
+    block.dataset.key = ask.key;
+    $("asks").append(block);
+  });
+}
+
+function renderCard(s) {
+  const card = s.card;
+  show("card-band", Boolean(card) && s.awaiting === "approval");
+  $("edit-email").hidden = true;
+  if (!card) return;
+
+  $("card-step").textContent = `Step ${card.step_number}`;
+  $("card-tool").textContent = card.action.tool;
+  $("card-intent").textContent = card.intent;
+  $("card-detail").textContent = card.detail || JSON.stringify(card.action.args, null, 2);
+
+  /* Only the edits that make sense for this tool are offered. */
+  const isEmail = card.action.tool === "send_email";
+  const slots = s.slot_options || [];
+  $("edit").hidden = !isEmail;
+  show("slot-pick", !isEmail && slots.length > 1);
+
+  if (!isEmail && slots.length > 1) {
+    const chosen = JSON.stringify(card.action.args.slot);
+    $("slots").innerHTML = "";
+    slots.slice(0, 8).forEach((slot, i) => {
+      const row = document.createElement("label");
+      row.className = "choice";
+      const checked = JSON.stringify(slot) === chosen ? " checked" : "";
+      row.innerHTML =
+        `<input type="radio" name="slot" value="${i}"${checked}>` +
+        `<span class="choice__label">${escapeHtml(prettySlot(slot))}</span>`;
+      row.querySelector("input").addEventListener("change", () => pickSlot(slots[i]));
+      $("slots").append(row);
+    });
+  }
+}
+
+function renderOutcome(s) {
+  const stopped = s.awaiting === "nothing" && s.stop_state;
+  show("done-band", Boolean(stopped));
+  if (!stopped) return;
+
+  $("stamp").className = `stamp stamp--${s.stop_state}`;
+  $("stamp").textContent = s.stop_state.replace("_", " ");
+  /* The summary carries the checklist as text for the terminal; the UI shows
+     it as a list instead, so strip it from the prose to avoid printing twice. */
+  const checklist = s.checklist || [];
+  $("done-summary").textContent = (s.summary || "").split("Over to you:")[0].trim();
+  show("checklist-block", checklist.length > 0);
+  $("checklist").innerHTML = "";
+  for (const item of checklist) {
+    const li = document.createElement("li");
+    li.textContent = item;
+    $("checklist").append(li);
+  }
+  /* The run's counters used to be printed here - steps, tool calls, replans,
+     unapproved side effects. They are evidence for the eval report rather than
+     anything a person acts on, and they still live at GET /audit/{run_id}. */
+}
+
+/* The band the user now needs to look at. Tracked so the page only scrolls
+   when the run actually moves on, not on every re-render. */
+let lastFocus = null;
+
+function focusBand(s) {
+  const target =
+    s.awaiting === "answer" ? "ask-band"
+    : s.awaiting === "approval" ? "card-band"
+    : s.stop_state ? "done-band"
+    : null;
+
+  if (!target || target === lastFocus) return;
+  lastFocus = target;
+
+  const el = $(target);
+  if (!el || el.hidden) return;
+  /* Without this, a short run renders its result BELOW the fold and the page
+     stays put: the goal box looks unchanged and it reads as "nothing
+     happened". A refusal is the worst case, because there is no plan and no
+     card to push the page down. */
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+}
+
+function render(s) {
+  /* A new run starts the focus tracking over. Without this, running a second
+     goal that ends the same way as the first scrolls nowhere, because the
+     target band has not changed. */
+  if (s.run_id && s.run_id !== runId) lastFocus = null;
+  status = s;
+  runId = s.run_id || runId;
+  /* Keep the goal box while RELAY has no work of its own to show - otherwise a
+     checklist-only run hides the goal you typed, and there is nothing on screen
+     saying what the list is for. */
+  const relayWork = (s.plan || []).filter((step) => !NOT_RELAY_WORK.includes(step.tool));
+  show("goal-band", relayWork.length === 0);
+  renderPlan(s);
+  renderAsks(s);
+  renderCard(s);
+  renderOutcome(s);
+  focusBand(s);
+}
+
+/* ---------- helpers ---------- */
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+const escapeAttr = escapeHtml;
+
+function prettySlot(slot) {
+  try {
+    const start = new Date(slot.start);
+    const end = new Date(slot.end);
+    const day = start.toLocaleDateString(undefined, { weekday: "short", day: "2-digit", month: "short" });
+    const time = (d) => d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    return `${day}, ${time(start)} - ${time(end)}`;
+  } catch {
+    return `${slot.start} - ${slot.end}`;
+  }
+}
+
+/* ---------- actions ---------- */
+
+function decide(decision, button) {
+  return guard(async () => {
+    render(await call("/decide", {
+      run_id: runId,
+      step_number: status.card.step_number,
+      decision,
+    }));
+  }, button, "Working…");
+}
+
+function pickSlot(slot) {
+  /* Choosing another slot is an edit: a different action, so a different hash,
+     so it goes back for approval. */
+  const revised = {
+    tool: "create_event",
+    args: { ...status.card.action.args, slot },
+  };
+  decide({ verdict: "edit", revised_action: revised });
+}
+
+$("start").addEventListener("click", () => guard(async () => {
+  const goal = $("goal").value.trim();
+  if (!goal) return;
+  if (/\[[^\]]+\]/.test(goal)) {
+    /* Caught here rather than sent: a model asked to plan "Email [who] the
+       [which file]" will invent a who and a file, and the first thing the user
+       would see is an approval card for a stranger. */
+    throw new Error("Replace the [bracketed] parts with real details first.");
+  }
+  render(await call("/run", { goal }));
+}, $("start"), "Reading your goal…"));
+
+document.querySelectorAll("[data-example]").forEach((b) =>
+  b.addEventListener("click", () => {
+    const box = $("goal");
+    box.value = b.dataset.example;
+    box.focus();
+    /* Select the first [placeholder] so typing replaces it. A template you
+       have to hunt through is barely better than an empty box. */
+    const first = box.value.indexOf("[");
+    if (first !== -1) {
+      box.setSelectionRange(first, box.value.indexOf("]", first) + 1);
+    }
+  }));
+
+$("send-answer").addEventListener("click", () => guard(async () => {
+  const choices = { contacts: {}, files: {} };
+  $("asks").querySelectorAll("[data-key]").forEach((block) => {
+    const picked = block.querySelector("input:checked") || block.querySelector('input[type="text"]');
+    if (!picked || !picked.value) return;
+    const map = block.dataset.kind === "contact" ? choices.contacts
+      : block.dataset.kind === "file" ? choices.files : null;
+    if (map) map[block.dataset.key] = picked.value;
+  });
+  render(await call("/answer", { run_id: runId, choices }));
+}, $("send-answer"), "Re-planning…"));
+
+$("approve").addEventListener("click", () => decide({ verdict: "approve" }, $("approve")));
+$("reject").addEventListener("click", () => decide({ verdict: "reject" }));
+$("revise").addEventListener("click", () =>
+  decide({ verdict: "reject", request_revision: true }));
+
+$("edit").addEventListener("click", () => {
+  const draft = status.draft || {};
+  $("edit-to").value = (draft.to || []).join(", ");
+  $("edit-subject").value = draft.subject || "";
+  $("edit-body").value = draft.body || "";
+  $("edit-email").hidden = false;
+});
+$("cancel-edit").addEventListener("click", () => { $("edit-email").hidden = true; });
+
+$("save-edit").addEventListener("click", () => guard(async () => {
+  /* Editing an email means a NEW draft - the draft is what gets sent, so a
+     changed recipient cannot be patched into an approved action. */
+  const redrafted = await call("/redraft", {
+    run_id: runId,
+    to: $("edit-to").value.split(",").map((s) => s.trim()).filter(Boolean),
+    subject: $("edit-subject").value,
+    body: $("edit-body").value,
+    attachments: (status.draft || {}).attachments || [],
+  });
+  render(await call("/decide", {
+    run_id: runId,
+    step_number: status.card.step_number,
+    decision: {
+      verdict: "edit",
+      revised_action: { tool: "send_email", args: { draft_id: redrafted.draft_id } },
+    },
+  }));
+}));
+
+$("again").addEventListener("click", () => { window.location.reload(); });
+
+/* Ask once, on load, whether this process talks to a real Google account. The
+   person approving a send deserves to know before they click, not after. */
+fetch("/mode")
+  .then((r) => (r.ok ? r.json() : null))
+  .then((m) => {
+    if (!m) return;
+    const banner = $("live-banner");
+    banner.hidden = !(m.live || m.dry_run);
+    if (m.live) {
+      banner.textContent =
+        "Live mode: approving will send real email and book real calendar entries.";
+      banner.classList.remove("live-banner--dry");
+      $("gate-note").textContent =
+        "LIVE: approving sends real email and books real calendar entries.";
+    } else if (m.dry_run) {
+      /* Real files and real contacts, no sending. Worth saying out loud: the
+         approval cards look identical to a live run. */
+      banner.textContent =
+        `Dry run on the "${m.backend}" backend: real files and contacts, but nothing is sent.`;
+      banner.classList.add("live-banner--dry");
+      $("gate-note").textContent =
+        "Dry run: approvals are rehearsed, nothing leaves this machine.";
+    }
+  })
+  .catch(() => {});
+</script>
+</body>
+</html>
