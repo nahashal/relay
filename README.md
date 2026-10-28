@@ -464,7 +464,7 @@ It exists because Google Cloud setup is a wall for a demo. One API key, no OAuth
 - **`find_file`** — a local `documents/` folder. The filename *is* the id, so there is nothing to register. Two files matching "Q3 report" keep the ask-rather-than-guess path reachable.
 - **`find_contact`** — a local `contacts.json`.
 - **`send_email`** — Brevo, 300/day on the free tier. Attachments are read straight off disk.
-- **`create_event`** — an `.ics` carrying `METHOD:REQUEST`, emailed. Gmail and Outlook render that as an invitation with Yes/Maybe/No, and accepting puts it on the recipient's calendar. "Book the meeting" becomes "send the invitation", which is arguably the more honest thing for an agent to do.
+- **`create_event`** — an `.ics` invitation, emailed. "Book the meeting" becomes "send the invitation", which is arguably the more honest thing for an agent to do. Guests get `METHOD:REQUEST` and see Yes/Maybe/No; the organiser gets a `METHOD:PUBLISH` copy so the meeting reaches *their* calendar too. Both renderings were tested on real Gmail accounts, because a `REQUEST` addressed to its own organiser is **delivered and then never shown** — it appears in neither the inbox nor the calendar.
 
 **`find_free_slots` is the weakened one, and it is weakened badly enough to say twice.** There is no
 way to read a calendar here — Google's CalDAV does not offer free/busy, and the REST endpoint needs

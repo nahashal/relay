@@ -915,19 +915,24 @@ So the two audiences now get different mail: guests a REQUEST they can RSVP to,
 the organiser the PUBLISH rendering that was *observed* to reach a calendar. Two
 sends instead of one.
 
-Note what the evidence actually covers. The organiser's copy is proven, because
-test A was exactly that rendering. The guest's copy is not - both tests went to
-one inbox - it is simply the standard shape every calendar system sends.
+Both halves are now measured, on two separate Gmail accounts:
 
-**Exercise 46.** Verifying the guest copy needs a second real mailbox. What
-would you check, and what would "it worked" look like from the sender's side?
+| Recipient | Method | Result |
+|---|---|---|
+| organiser, as attendee | `PUBLISH` | arrives, adds to calendar |
+| guest, as attendee | `REQUEST` | arrives as an invitation |
+| **organiser *and* attendee** | `REQUEST` | **delivered, then never shown** |
+
+So `REQUEST` is not broken through Brevo - the failing case was specifically an
+invitation addressed to its own organiser. That is a narrow, findable rule, and
+nothing short of sending all three would have produced it.
+
+**Exercise 46.** Three sends settled this. Which single one would you have run
+first, and what would you wrongly have concluded from it alone?
 
 ---
 
 ## What to build next
-
-**Verify the guest copy.** The organiser's rendering is measured; the guest's is
-assumed. It needs a second real address.
 
 **Keep probing.** Every round has found real defects, and the last several came
 from the user trying it rather than from any test: Lessons 36-46.

@@ -427,10 +427,12 @@ class LocalBackend(Backend):
         # appear as ORGANIZER with no ATTENDEE line of their own: an invitation
         # they are not invited to.
         #
-        # So the two audiences get different mail. Guests get the standard
-        # REQUEST they can RSVP to; the organiser gets the PUBLISH rendering
-        # that demonstrably reaches a calendar. Two sends rather than one, which
-        # is a cheap price for the organiser's own diary actually being updated.
+        # So the two audiences get different mail, and both halves have since
+        # been measured on separate Gmail accounts: the guest's REQUEST arrives
+        # as an invitation, the organiser's PUBLISH arrives and adds to the
+        # calendar. REQUEST is not broken in general - only an invitation
+        # addressed to its own organiser is. Two sends rather than one, which is
+        # a cheap price for the organiser's diary actually being updated.
         ids: list[str] = []
         if guests:
             ids.append(post(guests, "REQUEST", guests))
