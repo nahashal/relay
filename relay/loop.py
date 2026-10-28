@@ -510,10 +510,23 @@ class AgentLoop:
             slot = args.get("slot") or {}
             if not isinstance(slot, dict):
                 return None
-            return (
-                f"Book {args.get('title')} from {slot.get('start')} to {slot.get('end')}\n"
-                f"Inviting: {', '.join(args.get('attendees', []))}"  # type: ignore[arg-type]
-            )
+            attendees = list(args.get("attendees", []))  # type: ignore[arg-type]
+            lines = [
+                f"Book {args.get('title')} from {slot.get('start')} to {slot.get('end')}",
+                f"Inviting: {', '.join(attendees)}",
+            ]
+            # What the recipients will actually receive. Approving a send you
+            # cannot read is the thing the gate exists to prevent.
+            describe = getattr(self.executor.backend, "describe_event", None)
+            if callable(describe):
+                try:
+                    lines += ["", describe(slot, attendees, str(args.get("title")))]
+                except Exception as exc:  # noqa: BLE001
+                    # A preview is a courtesy and must not take down the card
+                    # it belongs to - but a SILENT failure here is how a
+                    # missing preview looked exactly like a working one.
+                    lines += ["", f"(could not render the invitation: {exc})"]
+            return "\n".join(lines)
         return None
 
     def _status(self, awaiting: Awaiting, card: Card | None = None) -> RunStatus:

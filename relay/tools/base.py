@@ -68,6 +68,12 @@ class Backend(Protocol):
 
     def find_file(self, query: str) -> list[FileMatch]: ...
 
+    #: What create_event will actually do, in words, for the approval card.
+    #: Each backend answers for itself: one emails an invitation, another
+    #: writes a calendar entry. A card that described only the arguments
+    #: left the user approving a send they could not read.
+    def describe_event(self, slot: Slot, attendees: list[str], title: str) -> str: ...
+
     def find_free_slots(
         self, people: list[str], minutes: int, window_start: dt.date, window_end: dt.date
     ) -> list[Slot]: ...

@@ -319,6 +319,15 @@ class GoogleBackend(Backend):
 
     # --- read-only tools ----------------------------------------------------
 
+    def describe_event(self, slot: Slot, attendees: list[str], title: str) -> str:
+        """Google writes the entry and sends its own invitations, so there is
+        no RELAY-composed email to preview - saying so beats inventing one."""
+        return (
+            f"{title}\n{slot['start']} to {slot['end']}\n\n"
+            f"Google Calendar will create this event and invite: "
+            f"{', '.join(attendees)}"
+        )
+
     def remember_contact(self, name: str, email: str) -> bool:
         """Not supported: writing a contact needs a People API write scope,
         and RELAY asks for the narrowest scopes that work. False, not an

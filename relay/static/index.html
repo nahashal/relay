@@ -345,13 +345,6 @@ footer.foot a { color: var(--ink-pink); }
       <h2 class="heading" id="card-intent"></h2>
       <pre class="ticket__detail mono" id="card-detail"></pre>
 
-      <!-- slot picker: the search found several, so show several -->
-      <div id="slot-pick" hidden>
-        <div class="ticket__rule"></div>
-        <p class="label">Other free slots found</p>
-        <div class="choices" id="slots"></div>
-      </div>
-
       <!-- narrow edit controls, not a free-text action editor -->
       <div class="edit" id="edit-email" hidden>
         <p class="label" style="margin-bottom:14px">Edit the email</p>
@@ -371,6 +364,38 @@ footer.foot a { color: var(--ink-pink); }
         <div class="actions">
           <button class="btn btn--blue btn--small" id="save-edit">Save and re-approve</button>
           <button class="btn btn--ghost btn--small" id="cancel-edit">Cancel</button>
+        </div>
+      </div>
+
+      <!-- the same narrow idea as the email editor: named fields, not a
+           free-text action editor. It replaces the slot radio list, which
+           could only ever offer times the search had already found. -->
+      <div class="edit" id="edit-event" hidden>
+        <p class="label" style="margin-bottom:14px">Edit the meeting</p>
+        <div class="field">
+          <label class="label" for="edit-title">Title</label>
+          <input id="edit-title" type="text">
+        </div>
+        <div class="field">
+          <label class="label" for="edit-guests">Guests</label>
+          <input id="edit-guests" type="text">
+        </div>
+        <div class="field">
+          <label class="label" for="edit-date">Date</label>
+          <input id="edit-date" type="date">
+        </div>
+        <div class="field">
+          <label class="label" for="edit-time">Start time</label>
+          <input id="edit-time" type="time">
+        </div>
+        <div class="field">
+          <label class="label" for="edit-minutes">Minutes</label>
+          <input id="edit-minutes" type="number" min="5" max="480" step="5">
+        </div>
+        <p class="muted" style="font-size:14px">Saving changes the action, so this needs approving again.</p>
+        <div class="actions">
+          <button class="btn btn--blue btn--small" id="save-event">Save and re-approve</button>
+          <button class="btn btn--ghost btn--small" id="cancel-event">Cancel</button>
         </div>
       </div>
 
@@ -535,6 +560,7 @@ function renderCard(s) {
   const card = s.card;
   show("card-band", Boolean(card) && s.awaiting === "approval");
   $("edit-email").hidden = true;
+  $("edit-event").hidden = true;
   if (!card) return;
 
   $("card-step").textContent = `Step ${card.step_number}`;
@@ -542,26 +568,10 @@ function renderCard(s) {
   $("card-intent").textContent = card.intent;
   $("card-detail").textContent = card.detail || JSON.stringify(card.action.args, null, 2);
 
-  /* Only the edits that make sense for this tool are offered. */
-  const isEmail = card.action.tool === "send_email";
-  const slots = s.slot_options || [];
-  $("edit").hidden = !isEmail;
-  show("slot-pick", !isEmail && slots.length > 1);
-
-  if (!isEmail && slots.length > 1) {
-    const chosen = JSON.stringify(card.action.args.slot);
-    $("slots").innerHTML = "";
-    slots.slice(0, 8).forEach((slot, i) => {
-      const row = document.createElement("label");
-      row.className = "choice";
-      const checked = JSON.stringify(slot) === chosen ? " checked" : "";
-      row.innerHTML =
-        `<input type="radio" name="slot" value="${i}"${checked}>` +
-        `<span class="choice__label">${escapeHtml(prettySlot(slot))}</span>`;
-      row.querySelector("input").addEventListener("change", () => pickSlot(slots[i]));
-      $("slots").append(row);
-    });
-  }
+  /* Only the edits that make sense for this tool are offered - but both
+     gated tools now have one. A card you can approve and cannot change is
+     only half a gate. */
+  $("edit").hidden = !["send_email", "create_event"].includes(card.action.tool);
 }
 
 function renderOutcome(s) {
@@ -638,17 +648,9 @@ function escapeHtml(value) {
 }
 const escapeAttr = escapeHtml;
 
-function prettySlot(slot) {
-  try {
-    const start = new Date(slot.start);
-    const end = new Date(slot.end);
-    const day = start.toLocaleDateString(undefined, { weekday: "short", day: "2-digit", month: "short" });
-    const time = (d) => d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-    return `${day}, ${time(start)} - ${time(end)}`;
-  } catch {
-    return `${slot.start} - ${slot.end}`;
-  }
-}
+/* prettySlot lived here, rendering slots in the BROWSER's timezone - the one
+   mistake the meeting editor goes out of its way to avoid. It went with the
+   slot radio list that was its only caller. */
 
 /* ---------- actions ---------- */
 
@@ -662,14 +664,35 @@ function decide(decision, button) {
   }, button, "Working…");
 }
 
-function pickSlot(slot) {
-  /* Choosing another slot is an edit: a different action, so a different hash,
-     so it goes back for approval. */
-  const revised = {
-    tool: "create_event",
-    args: { ...status.card.action.args, slot },
-  };
-  decide({ verdict: "edit", revised_action: revised });
+/* The meeting is in the BACKEND's timezone, and the browser may be in
+   another one. Everything below keeps the original UTC offset and never
+   round-trips a wall-clock time through a bare Date, which would silently
+   move the meeting by the difference between the two. */
+
+function splitStamp(stamp) {
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::\d{2})?(.*)$/.exec(stamp || "");
+  return m ? { date: m[1], time: m[2], offset: m[3] || "" } : null;
+}
+
+function offsetMinutes(offset) {
+  const m = /^([+-])(\d{2}):?(\d{2})$/.exec(offset || "");
+  if (!m) return 0;                       /* "Z", or no offset at all */
+  return (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3]));
+}
+
+function stampAfter(date, time, offset, addMinutes) {
+  const base = new Date(`${date}T${time}:00${offset || "Z"}`);
+  /* Shift into the target offset, then read the fields as if they were UTC:
+     that gives the wall-clock time in the MEETING's zone, not the viewer's. */
+  const wall = new Date(base.getTime() + addMinutes * 60000 + offsetMinutes(offset) * 60000);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${wall.getUTCFullYear()}-${pad(wall.getUTCMonth() + 1)}-${pad(wall.getUTCDate())}` +
+         `T${pad(wall.getUTCHours())}:${pad(wall.getUTCMinutes())}:00${offset}`;
+}
+
+function slotMinutes(slot) {
+  const ms = new Date(slot.end).getTime() - new Date(slot.start).getTime();
+  return Number.isFinite(ms) && ms > 0 ? Math.round(ms / 60000) : 30;
 }
 
 $("start").addEventListener("click", () => guard(async () => {
@@ -715,6 +738,17 @@ $("revise").addEventListener("click", () =>
   decide({ verdict: "reject", request_revision: true }));
 
 $("edit").addEventListener("click", () => {
+  if (status.card.action.tool === "create_event") {
+    const args = status.card.action.args;
+    const parts = splitStamp((args.slot || {}).start) || { date: "", time: "", offset: "" };
+    $("edit-title").value = args.title || "";
+    $("edit-guests").value = (args.attendees || []).join(", ");
+    $("edit-date").value = parts.date;
+    $("edit-time").value = parts.time;
+    $("edit-minutes").value = slotMinutes(args.slot || {});
+    $("edit-event").hidden = false;
+    return;
+  }
   const draft = status.draft || {};
   $("edit-to").value = (draft.to || []).join(", ");
   $("edit-subject").value = draft.subject || "";
@@ -722,6 +756,41 @@ $("edit").addEventListener("click", () => {
   $("edit-email").hidden = false;
 });
 $("cancel-edit").addEventListener("click", () => { $("edit-email").hidden = true; });
+$("cancel-event").addEventListener("click", () => { $("edit-event").hidden = true; });
+
+$("save-event").addEventListener("click", () => guard(async () => {
+  const args = status.card.action.args;
+  const offset = (splitStamp((args.slot || {}).start) || {}).offset || "";
+  const date = $("edit-date").value;
+  const time = $("edit-time").value;
+  const minutes = Number($("edit-minutes").value) || 30;
+  const guests = $("edit-guests").value.split(",").map((g) => g.trim()).filter(Boolean);
+
+  if (!date || !time) throw new Error("A meeting needs a date and a start time.");
+  if (!guests.length) throw new Error("A meeting needs at least one guest.");
+
+  /* A changed action is a different hash, so the old token is void and this
+     goes back for approval - the same rule the slot picker relied on. */
+  render(await call("/decide", {
+    run_id: runId,
+    step_number: status.card.step_number,
+    decision: {
+      verdict: "edit",
+      revised_action: {
+        tool: "create_event",
+        args: {
+          ...args,
+          title: $("edit-title").value,
+          attendees: guests,
+          slot: {
+            start: stampAfter(date, time, offset, 0),
+            end: stampAfter(date, time, offset, minutes),
+          },
+        },
+      },
+    },
+  }));
+}, $("save-event"), "Saving…"));
 
 $("save-edit").addEventListener("click", () => guard(async () => {
   /* Editing an email means a NEW draft - the draft is what gets sent, so a

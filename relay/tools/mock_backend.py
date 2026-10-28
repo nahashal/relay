@@ -102,6 +102,14 @@ class MockBackend(Backend):
         )
         return True
 
+    def describe_event(self, slot: Slot, attendees: list[str], title: str) -> str:
+        """The mock sends nothing, and says so rather than implying a send."""
+        return (
+            f"{title}\n{slot['start']} to {slot['end']}\n\n"
+            f"Would invite: {', '.join(attendees)}\n"
+            "Mock backend: no invitation is actually sent."
+        )
+
     def find_file(self, query: str) -> list[FileMatch]:
         """All query words must appear in the filename; newest first.
 

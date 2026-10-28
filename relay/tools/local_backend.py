@@ -100,6 +100,24 @@ def _matches(relative_path: str, words: list[str]) -> bool:
     return all(any(token.startswith(word) for token in tokens) for word in words)
 
 
+def invitation_subject(title: str, start: dt.datetime) -> str:
+    """The subject line of an invitation. Shared by the send and the preview."""
+    return f"Invitation: {title} - {start.strftime('%a %d %b %Y, %H:%M')}"
+
+
+def invitation_text(title: str, start: dt.datetime, end: dt.datetime) -> str:
+    """The body of an invitation. Shared by the send and the preview.
+
+    Pulled out of create_event so the approval card renders the SAME text
+    that gets sent. A preview that is merely similar is worse than none,
+    because it would be trusted.
+    """
+    return (
+        f"{title}\n{start.strftime('%a %d %b %Y, %H:%M')} ({end - start})\n\n"
+        "The attached invitation can be accepted from your calendar."
+    )
+
+
 class LocalBackend(Backend):
     """Local files for reading, Brevo for sending, .ics for inviting."""
 
@@ -408,6 +426,28 @@ class LocalBackend(Backend):
         # asks for one; pretending it means more than this would be a lie.
         return {"message_id": message_id, "thread_id": message_id}
 
+    def describe_event(self, slot: Slot, attendees: list[str], title: str) -> str:
+        """The invitation, as the recipients will receive it.
+
+        Built from invitation_subject/invitation_text - the same two helpers
+        create_event sends with - so the card cannot drift out of step with
+        what actually goes out. A preview that is merely similar is worse
+        than none: it would be trusted.
+        """
+        start, end = parse_slot(slot)
+        guests = [person for person in attendees if person != self._me]
+        lines = [
+            f"Subject: {invitation_subject(title, start)}",
+            "",
+            invitation_text(title, start, end),
+            "",
+            "Attached: invite.ics",
+        ]
+        if guests:
+            lines.append(f"Invitation to: {', '.join(guests)}")
+        lines.append(f"Copy to you ({self._me}), so it reaches your own calendar.")
+        return "\n".join(lines)
+
     def create_event(self, slot: Slot, attendees: list[str], title: str) -> EventReceipt:
         """Email an .ics invitation, to the attendees AND to the organiser.
 
@@ -446,11 +486,8 @@ class LocalBackend(Backend):
             )
             return self._brevo.send(
                 to=to,
-                subject=f"Invitation: {title} - {when}",
-                text=(
-                    f"{title}\n{when} ({end - start})\n\n"
-                    "The attached invitation can be accepted from your calendar."
-                ),
+                subject=invitation_subject(title, start),
+                text=invitation_text(title, start, end),
                 attachments=[("invite.ics", invite.encode("utf-8"))],
             )
 
