@@ -110,7 +110,9 @@ def invitation_subject(title: str, start: dt.datetime) -> str:
     return f"Meeting invitation: {title} - {start.strftime('%a %d %b %Y, %H:%M')}"
 
 
-def invitation_text(title: str, start: dt.datetime, end: dt.datetime) -> str:
+def invitation_text(
+    title: str, start: dt.datetime, end: dt.datetime, method: str = "REQUEST"
+) -> str:
     """The body of an invitation. Shared by the send and the preview.
 
     Pulled out of create_event so the approval card renders the SAME text
@@ -123,10 +125,15 @@ def invitation_text(title: str, start: dt.datetime, end: dt.datetime) -> str:
     `end` stays in the signature because the caller has it and a later
     rendering may want it; printing it was the mistake, not knowing it.
     """
-    return (
-        f"{title}\n{start.strftime('%a %d %b %Y, %H:%M')}\n\n"
-        "The attached invitation can be accepted from your calendar."
+    # The two copies reach different buttons. A guest gets METHOD:REQUEST and
+    # sees Yes / Maybe / No; the organiser's METHOD:PUBLISH copy has no Accept
+    # at all, so telling them to accept would point at nothing.
+    closing = (
+        "Accept below to put this in your calendar."
+        if method == "REQUEST"
+        else "This is your own copy - add it below to put it in your calendar."
     )
+    return f"{title}\n{start.strftime('%a %d %b %Y, %H:%M')}\n\n{closing}"
 
 
 class LocalBackend(Backend):
@@ -452,11 +459,12 @@ class LocalBackend(Backend):
             "",
             invitation_text(title, start, end),
             "",
-            "Attached: invite.ics",
         ]
         if guests:
-            lines.append(f"Invitation to: {', '.join(guests)}")
-        lines.append(f"Copy to you ({self._me}), so it reaches your own calendar.")
+            lines.append(
+                f"{', '.join(guests)} can accept, decline or propose another time."
+            )
+        lines.append(f"You get a copy at {self._me}, so it reaches your own calendar.")
         return "\n".join(lines)
 
     def create_event(self, slot: Slot, attendees: list[str], title: str) -> EventReceipt:
@@ -498,7 +506,7 @@ class LocalBackend(Backend):
             return self._brevo.send(
                 to=to,
                 subject=invitation_subject(title, start),
-                text=invitation_text(title, start, end),
+                text=invitation_text(title, start, end, method),
                 attachments=[("invite.ics", invite.encode("utf-8"))],
             )
 

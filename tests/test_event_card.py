@@ -76,7 +76,10 @@ def test_the_preview_names_the_guests_and_the_copy_to_you(local_backend):
     preview = local_backend.describe_event(SLOT, GUESTS, "Review")
     assert "fayaz@example.com" in preview
     assert "me@example.com" in preview
-    assert "invite.ics" in preview
+    # What the guest can DO, rather than the name of a file they never
+    # asked about. The card is for deciding, not for auditing an upload.
+    assert "accept, decline or propose another time" in preview
+    assert "invite.ics" not in preview
 
 
 def test_a_meeting_with_only_you_still_describes_itself(local_backend):
@@ -254,3 +257,29 @@ def test_what_is_previewed_is_what_is_sent(local_backend):
     preview = local_backend.describe_event(SLOT, GUESTS, "Review")
     assert invitation_subject("Review", dt.datetime(2026, 10, 29, 12, 0)) in preview
     assert "0:30:00" not in preview
+
+
+def test_the_two_copies_point_at_different_buttons():
+    """A guest gets METHOD:REQUEST and sees Yes/Maybe/No. The organiser's
+    PUBLISH copy has no Accept at all, so telling them to accept would point
+    at a button that is not there."""
+    start = dt.datetime(2026, 10, 29, 14, 0)
+    end = dt.datetime(2026, 10, 29, 14, 30)
+
+    guest = invitation_text("Review", start, end, "REQUEST")
+    organiser = invitation_text("Review", start, end, "PUBLISH")
+
+    assert "Accept below" in guest
+    assert "Accept" not in organiser
+    assert "your own copy" in organiser.lower()
+
+
+def test_no_wording_mentions_an_attachment():
+    """"The attached invitation" describes plumbing. Nobody receiving an
+    invitation needs to know it arrived as a file."""
+    start = dt.datetime(2026, 10, 29, 14, 0)
+    end = dt.datetime(2026, 10, 29, 14, 30)
+    for method in ("REQUEST", "PUBLISH"):
+        body = invitation_text("Review", start, end, method)
+        assert "attach" not in body.lower()
+        assert ".ics" not in body
