@@ -406,7 +406,7 @@ footer.foot a { color: var(--ink-pink); }
 
 <footer class="foot">
   <div class="wrap muted">
-    RELAY runs against a mock backend: no real email is sent and no real calendar is touched.
+    <span id="foot-mode">Checking which backend this process is using…</span>
     Design language from the <a href="https://github.com/8bsite/print-studio-website-template">print studio template</a> (MIT).
   </div>
 </footer>
@@ -752,6 +752,7 @@ fetch("/mode")
   .then((m) => {
     if (!m) return;
     const banner = $("live-banner");
+    const foot = $("foot-mode");
     banner.hidden = !(m.live || m.dry_run);
     if (m.live) {
       banner.textContent =
@@ -759,6 +760,9 @@ fetch("/mode")
       banner.classList.remove("live-banner--dry");
       $("gate-note").textContent =
         "LIVE: approving sends real email and books real calendar entries.";
+      foot.textContent =
+        `Live on the "${m.backend}" backend: approving sends real email and`
+        + " writes a real calendar invitation.";
     } else if (m.dry_run) {
       /* Real files and real contacts, no sending. Worth saying out loud: the
          approval cards look identical to a live run. */
@@ -767,9 +771,19 @@ fetch("/mode")
       banner.classList.add("live-banner--dry");
       $("gate-note").textContent =
         "Dry run: approvals are rehearsed, nothing leaves this machine.";
+      foot.textContent =
+        `Dry run on the "${m.backend}" backend: real files and contacts,`
+        + " but nothing is sent.";
+    } else {
+      foot.textContent =
+        "Mock backend: no real email is sent and no real calendar is touched.";
     }
   })
-  .catch(() => {});
+  .catch(() => {
+    /* Not knowing the mode is not the same as knowing it is safe. */
+    $("foot-mode").textContent =
+      "Could not read the backend mode - treat approvals as if they are live.";
+  });
 </script>
 </body>
 </html>
