@@ -1019,10 +1019,54 @@ instead of failing. When is that the right behaviour, and when is it this one?
 
 ---
 
+## Lesson 50 — Do not search for an answer you were given
+
+A goal said **"book a 30-minute meeting with him tomorrow at 2pm"**, and the
+plan came back with four steps:
+
+```
+1  draft_email
+2  send_email
+3  find_free_slots   Find 30-minute slots when all of A, B are free (Thu 29 Oct)
+4  create_event      Book the approved slot and invite B
+```
+
+Step 3 decided nothing. The time was in the goal. It ran because the planner
+had exactly one route to a meeting — search, then book the result — and no
+route for "the user already told you".
+
+The second problem is the one worth keeping:
+
+```python
+def find_free_slots(self, people, minutes, window_start, window_end):
+    every = free_slots(busy=[], ...)   # <- nobody's calendar is read
+```
+
+`busy=[]`. There is no free/busy source on this backend, so the search
+proposes working-hours times. Meanwhile the step announced itself as *"Find
+slots when all of A, B **are free**"*. That is not a weaker version of the
+truth; it is a different claim from the truth, printed on the screen of the
+person deciding whether to approve.
+
+Both are the same mistake in different places: **a step that performs a
+motion instead of answering a question.** Searching when the answer is known
+is the motion without the question. Claiming to read calendars that were
+never read is the motion dressed as the answer.
+
+So a stated time is now booked directly, and the search that remains — for
+goals that genuinely name no time — says *"Propose 30-minute times for …"*.
+It does the same thing it always did. It just no longer says otherwise.
+
+**Exercise 50.** "Book two catch-ups tomorrow at 2pm" still goes through the
+search, because two meetings cannot both be at 2pm. What should RELAY do
+instead, and which of the two problems above does your answer bring back?
+
+---
+
 ## What to build next
 
 **Keep probing.** Every round has found real defects, and the last several came
-from the user trying it rather than from any test: Lessons 36-49.
+from the user trying it rather than from any test: Lessons 36-50.
 
 **Then pick the backend for the deliverable:**
 

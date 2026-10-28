@@ -108,6 +108,41 @@ def next_weekday(today: dt.date, weekday: int, *, force_next_week: bool = False)
     return today + dt.timedelta(days=ahead or 7)
 
 
+#: "2pm", "2 pm", "14:00", "2:30pm", "9am". Deliberately small: anything
+#: this does not match is treated as "no time given", which falls back to the
+#: old behaviour rather than guessing an hour.
+_CLOCK = re.compile(
+    r"\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\b(?:at\s+)?(\d{1,2}):(\d{2})\b",
+    re.I,
+)
+
+
+def resolve_time(phrase: str) -> dt.time | None:
+    """The clock time named in a phrase, or None if it names none.
+
+    None is not a failure: most goals give a day and no hour, and that case
+    still goes through the normal path.
+    """
+    match = _CLOCK.search(phrase or "")
+    if not match:
+        return None
+
+    if match.group(3):  # the am/pm form
+        hour = int(match.group(1))
+        minute = int(match.group(2) or 0)
+        if hour == 12:
+            hour = 0
+        if match.group(3).lower() == "pm":
+            hour += 12
+    else:  # the 24-hour form
+        hour = int(match.group(4))
+        minute = int(match.group(5))
+
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return dt.time(hour, minute)
+
+
 def resolve_window(
     phrase: str, today: dt.date | None = None, timezone: str = DEFAULT_TZ
 ) -> tuple[dt.date, dt.date]:

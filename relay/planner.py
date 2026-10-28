@@ -35,6 +35,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from zoneinfo import ZoneInfo
+
 from pydantic import BaseModel, Field
 
 from . import dates
@@ -53,6 +55,10 @@ class MeetingIntent(BaseModel):
     minutes: int = 30
     #: The phrase to resolve, e.g. "next week". Not a date - dates.py does that.
     when_phrase: str = "next week"
+    #: The clock time the user named, if they named one: "2pm", "14:00".
+    #: When this is set RELAY books it rather than searching for a time -
+    #: the answer was already in the goal.
+    at_time: str | None = None
     title: str | None = None
     #: How many separate meetings were asked for. "two catch-ups next week" is 2.
     #: Dropping this silently was a real bug: the plan booked one and said nothing.
@@ -195,6 +201,10 @@ Rules:
   going to do about X?" - put the user's question in `question` and leave
   everything else null. RELAY will answer it from what it planned before.
   A request to CHANGE or REDO something is not a question: plan it normally.
+- If the goal names a clock time for the meeting - "at 2pm", "at 14:00",
+  "2.30 in the afternoon" - put it in `at_time` as the user wrote it, and
+  still put the DAY in `when_phrase`. "tomorrow at 2pm" is
+  when_phrase="tomorrow", at_time="2pm".
 - `manual_steps` is for steps RELAY cannot perform. Be concrete and useful:
   "Block 7-8pm on weekdays for revision" beats "make a timetable".
 - `unsupported` is ONLY for actions RELAY must refuse rather than approximate:
@@ -362,10 +372,19 @@ class RegexIntentReader(IntentReader):
                     names.append(token)
 
         phrase_match = re.search(r"\b(next week|this week|tomorrow|today|next \d+ days)\b", goal, re.I)
+        # The clock time, read straight out of the goal. The offline reader
+        # has to carry it too, or every test of the stated-time path would
+        # need the model.
+        clock = re.search(
+            r"\b(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\bat\s+\d{1,2}:\d{2}\b",
+            goal,
+            re.I,
+        )
         return MeetingIntent(
             attendee_names=names,
             minutes=minutes,
             when_phrase=phrase_match.group(1) if phrase_match else "next week",
+            at_time=clock.group(0) if clock else None,
             title=None,
         )
 
@@ -891,37 +910,72 @@ class Planner:
         if intent.meeting and window:
             everyone = self._dedupe([self._me(), *attendees])
             minutes = intent.meeting.minutes
-            add(
-                f"Find {minutes}-minute slots when all of "
-                f"{', '.join(everyone)} are free ({dates.describe(*window)})",
-                Action(
-                    tool=ToolName.FIND_FREE_SLOTS,
-                    args={
-                        "people": everyone,
-                        "minutes": minutes,
-                        "window_start": window[0],
-                        "window_end": window[1],
-                    },
-                ),
-            )
-            # One search, then one booking per meeting asked for. Each takes a
-            # DIFFERENT slot from the same result, so two catch-ups do not both
-            # land at the same time - and each gets its own approval card.
-            slot_step = number
             title = intent.meeting.title or self._default_title(intent)
-            for index in range(intent.meeting.count):
-                ordinal = "" if intent.meeting.count == 1 else f" ({index + 1} of {intent.meeting.count})"
+            # A time the user stated is not something to go looking for.
+            # The search step ran anyway, titled "Find slots when all of X are
+            # free" - which on the local backend reads nobody's calendar at
+            # all (free_slots is called with busy=[]). So it decided nothing,
+            # and said something untrue while deciding it.
+            stated = dates.resolve_time(intent.meeting.at_time or "")
+            if stated and intent.meeting.count == 1:
+                start_at = dt.datetime.combine(
+                    window[0], stated, tzinfo=ZoneInfo(self.timezone)
+                )
+                # Rejecting a time you chose yourself cannot mean "find a free
+                # one" - there is nothing to search. It means "later than
+                # that", so a revision moves on by one meeting length.
+                start_at += dt.timedelta(minutes=minutes * slot_offset)
+                finish_at = start_at + dt.timedelta(minutes=minutes)
                 add(
-                    f"Book the approved slot{ordinal} and invite {', '.join(attendees)}",
+                    f"Book {title} at {start_at.strftime('%H:%M on %a %d %b')}"
+                    f" and invite {', '.join(attendees) or 'you'}",
                     Action(
                         tool=ToolName.CREATE_EVENT,
                         args={
-                            "slot": StepRef(from_step=slot_step, index=index + slot_offset).as_arg(),
+                            "slot": {
+                                "start": start_at.isoformat(),
+                                "end": finish_at.isoformat(),
+                            },
                             "attendees": everyone,
-                            "title": f"{title}{ordinal}",
+                            "title": title,
                         },
                     ),
                 )
+            else:
+                add(
+                    # NOT "when all of X are free": this backend reads no
+                    # calendars, so it proposes working-hours times and the
+                    # approval card is the only thing between a proposal and
+                    # a clash. The step should say which of those it is.
+                    f"Propose {minutes}-minute times for "
+                    f"{', '.join(everyone)} ({dates.describe(*window)})",
+                    Action(
+                        tool=ToolName.FIND_FREE_SLOTS,
+                        args={
+                            "people": everyone,
+                            "minutes": minutes,
+                            "window_start": window[0],
+                            "window_end": window[1],
+                        },
+                    ),
+                )
+                # One search, then one booking per meeting asked for. Each takes a
+                # DIFFERENT slot from the same result, so two catch-ups do not both
+                # land at the same time - and each gets its own approval card.
+                slot_step = number
+                for index in range(intent.meeting.count):
+                    ordinal = "" if intent.meeting.count == 1 else f" ({index + 1} of {intent.meeting.count})"
+                    add(
+                        f"Book the approved slot{ordinal} and invite {', '.join(attendees)}",
+                        Action(
+                            tool=ToolName.CREATE_EVENT,
+                            args={
+                                "slot": StepRef(from_step=slot_step, index=index + slot_offset).as_arg(),
+                                "attendees": everyone,
+                                "title": f"{title}{ordinal}",
+                            },
+                        ),
+                    )
 
         # Steps RELAY cannot perform, after the ones it can. They run as notes:
         # no backend, no side effect, no approval - recording them IS the step.

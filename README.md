@@ -504,6 +504,12 @@ OAuth. So this backend **proposes** times inside working hours; it does not **fi
 free. `LocalBackend.proposes_only` is `True` so a UI can say so. The approval card is the only thing
 between a proposal and a clash, which makes the human approval *more* load-bearing here, not less.
 
+**It is also now reached far less often.** A goal that names a time — "tomorrow at 2pm" — is booked
+at that time, with no search step at all: the answer was already in the goal, so searching for it
+decided nothing while claiming to have found when everyone was free. The step that remains, for
+goals that name no time, is worded as what it does (*"Propose 30-minute times for …"*) rather than
+what it cannot (*"Find slots when all of … are free"*).
+
 That is a change to the build plan's Done criteria ("find 30-minute slots next week when all three
 of you are free"), and a client decision rather than an implementation detail.
 
