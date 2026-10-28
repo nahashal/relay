@@ -275,21 +275,60 @@ def test_create_event_emails_the_invitation(backend, transport):
     slot = {"start": "2026-11-03T12:30:00+00:00", "end": "2026-11-03T13:00:00+00:00"}
     receipt = backend.create_event(slot, [ME, RAHUL, ANU], "Q3 review")
 
-    payload = transport.calls[0]["payload"]
-    # The organiser is not invited to their own meeting.
-    assert [r["email"] for r in payload["to"]] == [RAHUL, ANU]
-    assert "Invitation:" in payload["subject"]
+    # Two sends: guests get an RSVP-able REQUEST, the organiser gets the
+    # PUBLISH rendering that was measured to actually reach a calendar.
+    posts = [c for c in transport.calls if c["method"] == "POST"]
+    assert len(posts) == 2
 
-    ics = base64.b64decode(payload["attachment"][0]["content"]).decode()
-    assert payload["attachment"][0]["name"] == "invite.ics"
-    assert "METHOD:REQUEST" in ics
+    guests, mine = posts[0]["payload"], posts[1]["payload"]
+    assert [r["email"] for r in guests["to"]] == [RAHUL, ANU]
+    assert [r["email"] for r in mine["to"]] == [ME]
+
+    guest_ics = base64.b64decode(guests["attachment"][0]["content"]).decode()
+    my_ics = base64.b64decode(mine["attachment"][0]["content"]).decode()
+    assert "METHOD:REQUEST" in guest_ics
+    assert "METHOD:PUBLISH" in my_ics
+    # The organiser's copy lists THEM as the attendee; a REQUEST naming them
+    # only as ORGANIZER is an invitation they are not invited to, and Gmail
+    # delivered one of those and never showed it.
+    assert ME in my_ics
     assert receipt["event_id"]
 
 
-def test_an_event_with_only_yourself_is_refused(backend):
+def test_an_event_with_only_yourself_is_allowed(backend, transport):
+    """"Block an hour on Thursday" is a real goal. It used to be refused for
+    having no guests."""
     slot = {"start": "2026-11-03T12:30:00+00:00", "end": "2026-11-03T13:00:00+00:00"}
-    with pytest.raises(ToolError, match="nobody to invite"):
-        backend.create_event(slot, [ME], "Alone")
+    backend.create_event(slot, [ME], "Focus time")
+
+    payload = transport.calls[0]["payload"]
+    assert [r["email"] for r in payload["to"]] == [ME]
+    ics = base64.b64decode(payload["attachment"][0]["content"]).decode()
+    # PUBLISH, not REQUEST: a client should offer "add to calendar" rather than
+    # ask you to RSVP to your own block.
+    assert "METHOD:PUBLISH" in ics
+
+
+def test_the_organiser_is_not_listed_among_the_guests(backend, transport):
+    """Repeating the organiser in the attendee list must not mail them twice."""
+    slot = {"start": "2026-11-03T12:30:00+00:00", "end": "2026-11-03T13:00:00+00:00"}
+    backend.create_event(slot, [ME, ME, RAHUL], "Q3 review")
+    posts = [c for c in transport.calls if c["method"] == "POST"]
+    assert [r["email"] for r in posts[0]["payload"]["to"]] == [RAHUL]
+    assert [r["email"] for r in posts[1]["payload"]["to"]] == [ME]
+
+
+def test_a_solo_block_is_a_single_send(backend, transport):
+    """No guests means no REQUEST to anybody, so one email, not two."""
+    slot = {"start": "2026-11-03T12:30:00+00:00", "end": "2026-11-03T13:00:00+00:00"}
+    backend.create_event(slot, [ME], "Focus time")
+    assert len([c for c in transport.calls if c["method"] == "POST"]) == 1
+
+
+def test_an_event_with_no_attendees_at_all_is_refused(backend):
+    slot = {"start": "2026-11-03T12:30:00+00:00", "end": "2026-11-03T13:00:00+00:00"}
+    with pytest.raises(ToolError, match="at least one attendee"):
+        backend.create_event(slot, [], "Nobody")
 
 
 def test_a_rejected_send_becomes_a_tool_error(workspace):

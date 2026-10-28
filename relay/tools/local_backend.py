@@ -136,6 +136,19 @@ class LocalBackend(Backend):
     def _next_id(self, prefix: str) -> str:
         return f"{prefix}_{next(self._ids):04d}"
 
+    @staticmethod
+    def _dedupe(addresses: list[str]) -> list[str]:
+        """Order-preserving dedupe. The organiser is usually in the attendee
+        list already, and sending them two copies is a poor first impression."""
+        seen: set[str] = set()
+        out: list[str] = []
+        for address in addresses:
+            key = address.lower()
+            if key not in seen:
+                seen.add(key)
+                out.append(address)
+        return out
+
     # --- read-only: local files ---------------------------------------------
 
     def find_contact(self, name: str) -> list[Contact]:
@@ -361,42 +374,74 @@ class LocalBackend(Backend):
         return {"message_id": message_id, "thread_id": message_id}
 
     def create_event(self, slot: Slot, attendees: list[str], title: str) -> EventReceipt:
-        """Email an .ics invitation. The attendees' clients do the booking.
+        """Email an .ics invitation, to the attendees AND to the organiser.
 
-        This is a real side effect - an email leaves - so it is gated exactly
-        like send_email. What it is NOT is a write to anyone's calendar: each
-        attendee still has to accept.
+        LESSON 45 - the organiser needs the invitation too.
+        Without the Calendar API nothing can write to a calendar, so the only
+        way an event reaches one is through a mail client that recognises an
+        invitation and offers to add it. The first version excluded the
+        organiser from the recipients - correct for a real calendar invite,
+        where the organiser's copy is created server-side, and exactly wrong
+        here: the person running RELAY was the one person whose calendar never
+        got the meeting.
+
+        A meeting with nobody but yourself is also allowed now. "Block an hour
+        on Thursday" is a real goal, and it was refused for having no guests.
+
+        This is still a real side effect - an email leaves - so it is gated
+        exactly like send_email. What it is NOT is a write to anyone's
+        calendar: every recipient, the organiser included, still has to accept.
         """
         if not attendees:
             raise ToolError("create_event: at least one attendee is required")
 
         start, end = parse_slot(slot)
-        invitees = [person for person in attendees if person != self._me]
-        if not invitees:
-            raise ToolError("create_event: nobody to invite besides yourself")
-
-        invite = build_invite(
-            start=start,
-            end=end,
-            title=title,
-            organiser=self._me,
-            attendees=invitees,
-            description="Sent by RELAY. Accept to add this to your calendar.",
-        )
+        guests = [person for person in attendees if person != self._me]
         when = start.strftime("%a %d %b %Y, %H:%M")
-        message_id = self._brevo.send(
-            to=invitees,
-            subject=f"Invitation: {title} - {when}",
-            text=(
-                f"{title}\n{when} ({end - start})\n\n"
-                "The attached invitation can be accepted from your calendar."
-            ),
-            attachments=[("invite.ics", invite.encode("utf-8"))],
-        )
-        self._events[message_id] = title
+
+        def post(to: list[str], method: str, who: list[str]) -> str:
+            invite = build_invite(
+                start=start,
+                end=end,
+                title=title,
+                organiser=self._me,
+                attendees=who,
+                description="Sent by RELAY. Accept to add this to your calendar.",
+                method=method,
+            )
+            return self._brevo.send(
+                to=to,
+                subject=f"Invitation: {title} - {when}",
+                text=(
+                    f"{title}\n{when} ({end - start})\n\n"
+                    "The attached invitation can be accepted from your calendar."
+                ),
+                attachments=[("invite.ics", invite.encode("utf-8"))],
+            )
+
+        # LESSON 46 - the organiser's copy needs a different rendering.
+        # Measured, not assumed. A METHOD:PUBLISH invitation naming the
+        # recipient as the attendee arrives and offers "add to calendar". A
+        # METHOD:REQUEST one was DELIVERED by Gmail and then never shown - and
+        # the organiser's copy of a real meeting is worse still, because they
+        # appear as ORGANIZER with no ATTENDEE line of their own: an invitation
+        # they are not invited to.
+        #
+        # So the two audiences get different mail. Guests get the standard
+        # REQUEST they can RSVP to; the organiser gets the PUBLISH rendering
+        # that demonstrably reaches a calendar. Two sends rather than one, which
+        # is a cheap price for the organiser's own diary actually being updated.
+        ids: list[str] = []
+        if guests:
+            ids.append(post(guests, "REQUEST", guests))
+        ids.append(post([self._me], "PUBLISH", [self._me]))
+
+        for message_id in ids:
+            self._events[message_id] = title
         return {
-            "event_id": message_id,
-            "html_link": f"invitation emailed to {', '.join(invitees)}",
+            "event_id": ids[0],
+            "html_link": "invitation emailed to "
+            + ", ".join(self._dedupe([*guests, self._me])),
         }
 
     # --- verification -------------------------------------------------------

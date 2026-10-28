@@ -873,18 +873,69 @@ skipped for the next few minutes, and where would that state live?
 
 ---
 
+## Lesson 45 — The organiser needs the invitation too
+
+Without the Calendar API nothing can write to a calendar. The only route is a
+mail client recognising an invitation and offering to add it. So the first
+version of `create_event` excluded the organiser from the recipients - correct
+for a real Google invite, where the organiser's copy is created server-side,
+and exactly wrong here. **The person running RELAY was the one person whose
+calendar never got the meeting.**
+
+The fix is one line, and the lesson is about where it came from: a user asking
+"can it save the meeting to my calendar?" - not from a test, because the tests
+asserted the old behaviour was right.
+
+**Exercise 45.** A meeting with only yourself is now allowed. What else in the
+planner still assumes a meeting has guests?
+
+---
+
+## Lesson 46 — Measure the rendering; do not reason about it
+
+Two real invitations, same second, same inbox:
+
+```
+10:32:39  delivered  RELAY test A - add to calendar (PUBLISH)
+10:32:39  delivered  RELAY test B - invitation (REQUEST)
+```
+
+**A arrived and added to the calendar. B never appeared at all** - not the
+inbox, not the calendar - despite Gmail reporting it delivered. A client can
+accept a message and silently decide not to show it, which no amount of
+RFC-reading would have predicted.
+
+The test also had a flaw worth remembering: B listed the user as organiser AND
+attendee, a shape that never occurs. A real meeting gives the organiser a
+REQUEST where they are ORGANIZER with no ATTENDEE line of their own - an
+invitation they are not invited to - which is, if anything, more likely to be
+dropped.
+
+So the two audiences now get different mail: guests a REQUEST they can RSVP to,
+the organiser the PUBLISH rendering that was *observed* to reach a calendar. Two
+sends instead of one.
+
+Note what the evidence actually covers. The organiser's copy is proven, because
+test A was exactly that rendering. The guest's copy is not - both tests went to
+one inbox - it is simply the standard shape every calendar system sends.
+
+**Exercise 46.** Verifying the guest copy needs a second real mailbox. What
+would you check, and what would "it worked" look like from the sender's side?
+
+---
+
 ## What to build next
 
-**Keep probing.** Every round has found real defects: seven goals found four (Lesson 36), one real
-send found two (Lesson 37), one question about addresses found two (Lesson 38), one user trying the
-UI found three (Lessons 39-41). Still unhandled: a recurring meeting, an explicit date
-("on 5 November"), a time of day ("Thursday afternoon").
+**Verify the guest copy.** The organiser's rendering is measured; the guest's is
+assumed. It needs a second real address.
+
+**Keep probing.** Every round has found real defects, and the last several came
+from the user trying it rather than from any test: Lessons 36-46.
 
 **Then pick the backend for the deliverable:**
 
-- `local` — one Brevo key, no Google Cloud. **Proven: a real email was sent and Brevo reported `delivered`.** Meeting times are *proposed*, not *found*.
+- `local` — one Brevo key, no Google Cloud. Real email delivered, invitations that reach a calendar. Meeting times are *proposed*, not *found*.
 - `live` — the full Google stack. Written and unit-tested against doubles; has never made an API call.
 
-**Then the deployed demo.** The plan's Vercel row does not fit (run state is in-process, the audit
-log is a SQLite file), so one persistent process is the cheap answer and durable run state the
-proper one.
+**Then the deployed demo.** The plan's Vercel row does not fit, so one
+persistent process is the cheap answer and durable run state the proper one.
