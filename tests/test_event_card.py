@@ -206,3 +206,51 @@ def test_a_plain_rejection_does_not_move_the_slot(backend, audit):
     status = loop.decide(status.card.step_number, Decision(verdict="reject"))
     assert status.stop_state is StopState.REJECTED
     assert loop.slot_offset == 0
+
+
+# --------------------------------------------------------------------------- #
+# The words the recipient actually reads
+# --------------------------------------------------------------------------- #
+
+
+def test_the_subject_says_it_is_a_meeting_invitation():
+    """"Invitation: Review" does not say what you are invited to, and the
+    subject is all most people read before deciding to open it."""
+    subject = invitation_subject("Review", dt.datetime(2026, 10, 29, 14, 0))
+    assert subject.startswith("Meeting invitation:")
+    assert "Review" in subject
+    assert "29 Oct 2026, 14:00" in subject
+
+
+def test_the_body_does_not_print_a_timedelta():
+    """It used to end "(0:30:00)" - str(end - start), a Python object's repr
+    in an email to someone who has never heard of Python."""
+    body = invitation_text(
+        "Review", dt.datetime(2026, 10, 29, 14, 0), dt.datetime(2026, 10, 29, 14, 30)
+    )
+    assert "0:30:00" not in body
+    assert ":00:00" not in body
+
+
+def test_the_body_still_says_what_and_when():
+    body = invitation_text(
+        "Review", dt.datetime(2026, 10, 29, 14, 0), dt.datetime(2026, 10, 29, 14, 30)
+    )
+    assert "Review" in body
+    assert "Thu 29 Oct 2026, 14:00" in body
+    assert "calendar" in body
+
+
+def test_the_duration_is_not_lost_only_unprinted(local_backend):
+    """The .ics is what a calendar reads, and it still carries the end time -
+    dropping the duration from the prose must not drop it from the invite."""
+    sent = local_backend.create_event(SLOT, GUESTS, "Review")
+    assert sent["event_id"]
+
+
+def test_what_is_previewed_is_what_is_sent(local_backend):
+    """Both wordings changed at once, so the anti-drift property is worth
+    re-checking rather than assumed."""
+    preview = local_backend.describe_event(SLOT, GUESTS, "Review")
+    assert invitation_subject("Review", dt.datetime(2026, 10, 29, 12, 0)) in preview
+    assert "0:30:00" not in preview

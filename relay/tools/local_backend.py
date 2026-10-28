@@ -101,8 +101,13 @@ def _matches(relative_path: str, words: list[str]) -> bool:
 
 
 def invitation_subject(title: str, start: dt.datetime) -> str:
-    """The subject line of an invitation. Shared by the send and the preview."""
-    return f"Invitation: {title} - {start.strftime('%a %d %b %Y, %H:%M')}"
+    """The subject line of an invitation. Shared by the send and the preview.
+
+    "Meeting invitation", not "Invitation": a title like "Review" or
+    "Catch-up" does not say what is being invited to, and the subject is all
+    most people read before deciding whether to open it.
+    """
+    return f"Meeting invitation: {title} - {start.strftime('%a %d %b %Y, %H:%M')}"
 
 
 def invitation_text(title: str, start: dt.datetime, end: dt.datetime) -> str:
@@ -111,9 +116,15 @@ def invitation_text(title: str, start: dt.datetime, end: dt.datetime) -> str:
     Pulled out of create_event so the approval card renders the SAME text
     that gets sent. A preview that is merely similar is worse than none,
     because it would be trusted.
+
+    No duration. It used to end "(0:30:00)" - str(end - start), a Python
+    object's repr in an email to someone who has never heard of Python - and
+    the real answer is in the attached .ics, which is what a calendar reads.
+    `end` stays in the signature because the caller has it and a later
+    rendering may want it; printing it was the mistake, not knowing it.
     """
     return (
-        f"{title}\n{start.strftime('%a %d %b %Y, %H:%M')} ({end - start})\n\n"
+        f"{title}\n{start.strftime('%a %d %b %Y, %H:%M')}\n\n"
         "The attached invitation can be accepted from your calendar."
     )
 
