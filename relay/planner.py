@@ -59,6 +59,69 @@ class MeetingIntent(BaseModel):
     count: int = 1
 
 
+#: Words that can sit immediately before an address without being the name
+#: of the person who owns it.
+_NOT_A_NAME = frozenset(
+    "a an and at bcc cc email for from mail message send the to with".split()
+)
+
+
+#: Loose on purpose - it only ever runs over text the user typed, and
+#: anything it finds is checked with looks_like_email before being used.
+_ADDRESS_IN_TEXT = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+
+
+def address_for_name(goal_text: str, name: str) -> str | None:
+    """The address the user wrote next to this name, if they wrote one.
+
+        "send a hello to fayaz fayastm03@gmail.com" + "fayaz" -> the address
+        "send fayaz the report, cc anu anu@x.com"   + "fayaz" -> None
+
+    The model drops the address when it reports a recipient by name, so the
+    only record of it is the goal. Reading it back from there keeps the rule
+    that matters - the address came from the USER - while sparing them a
+    question they have already answered.
+
+    Adjacency is what makes it safe: only punctuation may sit between the
+    name and the address, so a second person's address later in the sentence
+    can never be attached to the first person's name.
+    """
+    index = goal_text.lower().find(name.strip().lower())
+    if index < 0:
+        return None
+
+    after = goal_text[index + len(name.strip()):]
+    match = _ADDRESS_IN_TEXT.search(after)
+    if not match or after[: match.start()].strip(" \t<>():,-"):
+        return None
+
+    found = match.group(0)
+    return found if looks_like_email(found) else None
+
+
+def name_for_address(goal_text: str, address: str) -> str | None:
+    """The name the user wrote just before an address, if they wrote one.
+
+        "send hi to fayaz fayastm03@gmail.com"  -> "fayaz"
+        "send this to fayastm03@gmail.com"      -> None
+
+    Read out of the GOAL - the user's own words - and never out of the model,
+    which is the same rule that decides whether the address may be used at
+    all. A name taken from the model would be a guess wearing a label.
+    """
+    index = goal_text.lower().find(address.strip().lower())
+    if index <= 0:
+        return None
+
+    before = re.findall(r"[A-Za-z][A-Za-z'.-]*", goal_text[:index])
+    words: list[str] = []
+    for word in reversed(before[-2:]):
+        if word.lower() in _NOT_A_NAME:
+            break
+        words.insert(0, word)
+    return " ".join(words) or None
+
+
 class EmailIntent(BaseModel):
     """An email the user asked for, in the user's own words."""
 
@@ -867,6 +930,19 @@ class Planner:
 
     # --- helpers ------------------------------------------------------------
 
+    def _remember(self, name: str, email: str) -> None:
+        """Teach the backend a contact the user supplied.
+
+        Learning who someone is is not acting on the world: nothing is sent,
+        nothing leaves the machine, so it needs no approval and never reaches
+        the executor. Nor is it contingent on the run finishing - "fayaz is
+        fayastm03@gmail.com" is true whether or not the email goes, and a
+        rejected draft is no reason to forget the address.
+        """
+        remember = getattr(self.backend, "remember_contact", None)
+        if callable(remember):
+            remember(name, email)
+
     def _resolve_person(
         self,
         name: str,
@@ -896,8 +972,17 @@ class Planner:
 
         if looks_like_email(name):
             if name.strip().lower() in goal_text.lower():
-                self._resolved_emails.add(name.strip())
-                return name.strip()
+                address = name.strip()
+                self._resolved_emails.add(address)
+                # "to fayaz fayastm03@gmail.com" tells us two things, and the
+                # old code kept only one of them until the end of the run.
+                learned = name_for_address(goal_text, address)
+                if learned:
+                    self._remember(learned, address)
+                    # Also fixes the greeting: without a name the body opened
+                    # "Hi Fayastm03", derived from the address.
+                    self._resolved_names[address] = learned
+                return address
             # Address-shaped, but not in what the user wrote: the only way it
             # got here is the reader inventing it.
             questions.append(
@@ -923,6 +1008,17 @@ class Planner:
             return None
 
         if not matches:
+            # Before asking, look at what the user already wrote. The reader
+            # reports "fayaz" and discards the address beside it, so the goal
+            # is the only place it still exists - and asking for something
+            # already on screen is the complaint that produced this branch.
+            typed = address_for_name(goal_text, name)
+            if typed:
+                self._resolved_emails.add(typed)
+                self._resolved_names[typed] = name
+                self._remember(name, typed)
+                return typed
+
             # The question above promises the user can answer with an address.
             # Before this, the answer was collected and then ignored, so RELAY
             # asked the same question until the replan budget stopped the run.
@@ -931,6 +1027,9 @@ class Planner:
                 # Greet them by the name the user used, since no contact record
                 # exists to take one from.
                 self._resolved_names[chosen] = name
+                # ...and so that there IS one next time. This is the exact
+                # question the user was tired of answering twice.
+                self._remember(name, chosen)
                 return chosen
             if chosen:
                 questions.append(

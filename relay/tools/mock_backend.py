@@ -90,6 +90,18 @@ class MockBackend(Backend):
         needle = name.strip().lower()
         return [c for c in self._data["contacts"] if needle in c["name"].lower()]
 
+    def remember_contact(self, name: str, email: str) -> bool:
+        """In memory only - the mock has no file to write."""
+        name, email = name.strip(), email.strip()
+        if not name or not email:
+            return False
+        if any(c["email"].lower() == email.lower() for c in self._data["contacts"]):
+            return False
+        self._data["contacts"].append(
+            {"name": name, "email": email, "note": "learned from a goal you typed"}
+        )
+        return True
+
     def find_file(self, query: str) -> list[FileMatch]:
         """All query words must appear in the filename; newest first.
 

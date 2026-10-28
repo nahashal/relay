@@ -61,6 +61,11 @@ class Backend(Protocol):
 
     def find_contact(self, name: str) -> list[Contact]: ...
 
+    #: Teach the backend a contact the USER supplied. True if it was new.
+    #: Read-only in the gated sense - nothing leaves the machine - which is
+    #: why it sits with the read-only tools and the executor never sees it.
+    def remember_contact(self, name: str, email: str) -> bool: ...
+
     def find_file(self, query: str) -> list[FileMatch]: ...
 
     def find_free_slots(

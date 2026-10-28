@@ -319,6 +319,12 @@ class GoogleBackend(Backend):
 
     # --- read-only tools ----------------------------------------------------
 
+    def remember_contact(self, name: str, email: str) -> bool:
+        """Not supported: writing a contact needs a People API write scope,
+        and RELAY asks for the narrowest scopes that work. False, not an
+        exception - a backend that cannot learn is not a broken run."""
+        return False
+
     def find_contact(self, name: str) -> list[Contact]:
         """Personal contacts plus the Workspace directory, deduped by address."""
         people = self._services["people"]

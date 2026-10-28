@@ -182,6 +182,41 @@ class LocalBackend(Backend):
                 )
         return found
 
+    def remember_contact(self, name: str, email: str) -> bool:
+        """Add a contact the user taught RELAY. True if it was new.
+
+        Deliberately never raises: failing to learn must not fail a run that
+        was otherwise fine. A caller that cannot write contacts.json still
+        has the address for THIS run - it just has to ask again next time.
+        """
+        name, email = name.strip(), email.strip()
+        if not name or not email:
+            return False
+
+        rows: list[dict] = []
+        if self._contacts_file.exists():
+            try:
+                rows = json.loads(self._contacts_file.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                # Never clobber a file we could not read. The user may have
+                # hand-edited it, and losing their contacts to a stray comma
+                # would be a far worse bug than asking for an address twice.
+                return False
+
+        if any(str(r.get("email", "")).strip().lower() == email.lower() for r in rows):
+            return False
+
+        rows.append({"name": name, "email": email, "note": "learned from a goal you typed"})
+        try:
+            # Write-then-rename, so an interrupted write cannot leave the
+            # contacts file half-written.
+            tmp = self._contacts_file.with_name(self._contacts_file.name + ".tmp")
+            tmp.write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")
+            tmp.replace(self._contacts_file)
+        except OSError:
+            return False
+        return True
+
     def find_file(self, query: str) -> list[FileMatch]:
         """All query words must appear in the file's path; newest first.
 
