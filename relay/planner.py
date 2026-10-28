@@ -662,12 +662,20 @@ class Planner:
     _resolved_names: dict[str, str] = field(default_factory=dict)
     _resolved_files: set[str] = field(default_factory=set)
 
-    def plan(self, goal: str, choices: Choices | None = None) -> Plan:
+    def plan(
+        self, goal: str, choices: Choices | None = None, slot_offset: int = 0
+    ) -> Plan:
         """Plan ``goal``, using any answers the user has already given.
 
         Re-planning with one more entry in ``choices`` is how a NEEDS_INPUT run
         resumes, which is why this is a pure function of (goal, choices) rather
         than something that mutates planner state.
+
+        ``slot_offset`` skips that many slots from the front of the search
+        results. Rejecting a meeting and asking for a revision used to replan
+        from identical inputs and hand back an identical card; the offset is
+        what makes "give me a different time" mean something. It stays an
+        ARGUMENT rather than planner state so the function stays pure.
         """
         intent = self.reader.read(goal)
 
@@ -709,7 +717,7 @@ class Planner:
                     f" RELAY arranges at most {MAX_MEETINGS} in one run"
                 )
 
-        return self._resolve(goal, intent, choices or Choices())
+        return self._resolve(goal, intent, choices or Choices(), slot_offset)
 
     def _answer_from_memory(self, goal: str, question: str) -> Plan:
         """Answer a question about past runs, as a one-step plan.
@@ -765,7 +773,13 @@ class Planner:
 
     # --- resolution ---------------------------------------------------------
 
-    def _resolve(self, goal: str, intent: GoalIntent, choices: Choices | None = None) -> Plan:
+    def _resolve(
+        self,
+        goal: str,
+        intent: GoalIntent,
+        choices: Choices | None = None,
+        slot_offset: int = 0,
+    ) -> Plan:
         choices = choices or Choices()
         # Structured questions; the prose list is derived at the end, so the
         # two can never disagree.
@@ -902,7 +916,7 @@ class Planner:
                     Action(
                         tool=ToolName.CREATE_EVENT,
                         args={
-                            "slot": StepRef(from_step=slot_step, index=index).as_arg(),
+                            "slot": StepRef(from_step=slot_step, index=index + slot_offset).as_arg(),
                             "attendees": everyone,
                             "title": f"{title}{ordinal}",
                         },

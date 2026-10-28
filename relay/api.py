@@ -153,7 +153,12 @@ def mode() -> dict[str, Any]:
 def _loop_for(run_id: str) -> AgentLoop:
     loop = _RUNS.get(run_id)
     if loop is None:
-        raise HTTPException(404, "unknown run")
+        raise HTTPException(
+            404,
+            "This run is no longer in the server's memory - runs in flight are"
+            " held in the process, so restarting it loses them. The audit log"
+            " kept the evidence; start another run to carry on.",
+        )
     return loop
 
 

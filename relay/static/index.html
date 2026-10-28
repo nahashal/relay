@@ -475,6 +475,11 @@ async function guard(work, button, pendingLabel) {
   } catch (err) {
     $("error").textContent = err.message;
     $("error").hidden = false;
+    /* The error line lives near the foot of the page, and the click that
+       failed was usually on a card well above it. Unhiding it silently is
+       indistinguishable from a button that does nothing - which is exactly
+       how a forgotten run reported itself. */
+    $("error").scrollIntoView({ behavior: "smooth", block: "center" });
   } finally {
     busy(false);
     if (button && original !== null) button.textContent = original;

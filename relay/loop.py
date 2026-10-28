@@ -174,6 +174,9 @@ class AgentLoop:
     cursor: int = 0
     replans_used: int = 0
     retries_used: int = 0
+    #: How many slots to skip when re-planning. Rejecting a meeting means "not
+    #: that time", so the next plan must not offer the same one back.
+    slot_offset: int = 0
     completed: list[int] = field(default_factory=list)
     stop_state: StopState | None = None
     summary: str = ""
@@ -222,6 +225,11 @@ class AgentLoop:
 
         if decision.verdict == "reject":
             if decision.request_revision:
+                if pending_action.tool is ToolName.CREATE_EVENT:
+                    # Rejecting a time and being offered it again is not a
+                    # revision. This is what the slot radio list used to do,
+                    # moved to where rejecting already means "not that one".
+                    self.slot_offset += 1
                 return self._replan(decision.note or "rejected, revision requested")
             return self._stop(StopState.REJECTED, decision.note or "rejected by the user")
 
@@ -252,7 +260,7 @@ class AgentLoop:
 
     def _plan_and_advance(self) -> RunStatus:
         try:
-            self.plan = self.planner.plan(self.goal, self.choices)
+            self.plan = self.planner.plan(self.goal, self.choices, self.slot_offset)
         except PlanningError as exc:
             return self._stop(StopState.BLOCKED, str(exc))
 

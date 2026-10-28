@@ -144,3 +144,65 @@ def local_backend(tmp_path):
             api_key="k", sender_email="me@example.com", transport=_Transport()
         ),
     )
+
+
+# --------------------------------------------------------------------------- #
+# Reject & replan has to change something
+# --------------------------------------------------------------------------- #
+
+
+def test_rejecting_a_meeting_replans_onto_a_different_slot(backend, audit):
+    """It used to throw the rejection away and replan from identical inputs,
+    so it handed back an identical card: a replan spent on nothing."""
+    from relay.schemas import Decision
+
+    loop = _loop(backend, audit, "replan")
+    status = loop.start("Book a 30-minute review with Rahul Menon next week.")
+    if status.awaiting.value == "answer":
+        from relay.planner import Choices
+
+        status = loop.answer(Choices(contacts={"Rahul Menon": "rahul.menon@example.com"}))
+
+    first = status.card.action.args["slot"]
+    status = loop.decide(
+        status.card.step_number, Decision(verdict="reject", request_revision=True)
+    )
+
+    assert status.card is not None, "a revision must come back with a new card"
+    assert status.card.action.args["slot"] != first
+
+
+def test_rejecting_twice_keeps_moving(backend, audit):
+    from relay.planner import Choices
+    from relay.schemas import Decision
+
+    loop = _loop(backend, audit, "replan2")
+    status = loop.start("Book a 30-minute review with Rahul Menon next week.")
+    if status.awaiting.value == "answer":
+        status = loop.answer(Choices(contacts={"Rahul Menon": "rahul.menon@example.com"}))
+
+    seen = []
+    for _ in range(2):
+        if status.card is None:
+            break
+        seen.append(status.card.action.args["slot"])
+        status = loop.decide(
+            status.card.step_number, Decision(verdict="reject", request_revision=True)
+        )
+
+    assert len(seen) == len({str(s) for s in seen}), f"a slot was offered twice: {seen}"
+
+
+def test_a_plain_rejection_does_not_move_the_slot(backend, audit):
+    """Only a revision means "not that time". A plain reject ends the run."""
+    from relay.planner import Choices
+    from relay.schemas import Decision, StopState
+
+    loop = _loop(backend, audit, "replan3")
+    status = loop.start("Book a 30-minute review with Rahul Menon next week.")
+    if status.awaiting.value == "answer":
+        status = loop.answer(Choices(contacts={"Rahul Menon": "rahul.menon@example.com"}))
+
+    status = loop.decide(status.card.step_number, Decision(verdict="reject"))
+    assert status.stop_state is StopState.REJECTED
+    assert loop.slot_offset == 0
