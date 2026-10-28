@@ -1063,10 +1063,66 @@ instead, and which of the two problems above does your answer bring back?
 
 ---
 
+## Lesson 51 — A prompt is not an invariant
+
+**"Email to dhilshad for a meeting tomorrow t 3pm."** One request. Dhilshad
+got it twice:
+
+```
+step 2  send_email    "Meeting request - I would like to schedule a
+                       meeting with you for tomorrow at 3pm."
+step 3  create_event   an .ics invitation for 15:00-15:30, emailed to him
+```
+
+The cause is a gap in how RELAY describes itself to the model. The
+instruction listed the meeting tool as *"propose and book meetings (it can
+find times and send invitations)"* and never said the thing that matters:
+**booking a meeting is itself an email.** So a goal phrased as "email someone
+about a meeting" read as two actions, and both of them sent.
+
+The obvious fix is to say so in the instruction, and that was done. Then the
+reader was measured on the same goal, and the result was this:
+
+```
+call 1   email=True   meeting=False
+the user's run   email=True   meeting=True
+```
+
+**The same goal, read two different ways.** Not a bug in the prompt - a
+property of asking a model for structure. A prompt shapes a distribution; it
+does not hold an invariant. "Do not send the same request twice" is an
+invariant, so it belongs in code:
+
+```python
+if intent.email and intent.meeting and not attachments \
+        and set(recipients) <= set(attendees):
+    intent = intent.model_copy(update={"email": None})
+```
+
+The attachment is what tells a real second message from a duplicate. An email
+carrying the Q3 report has a reason to exist beside the invitation, because
+the invitation cannot carry the report. An email carrying only the model's
+prose about the meeting does not.
+
+Note the ordering: the check runs *after* both halves are resolved, so it
+compares real addresses rather than whichever names the model happened to
+use. "Rahul" and "Rahul Menon" are the same person to a reader and different
+strings to a set.
+
+And the fold is announced - a NOTE saying the invitation carries the request.
+A step the user can see they asked for, vanishing without a word, looks
+exactly like RELAY losing half the goal.
+
+**Exercise 51.** The guard folds the email into the invitation and discards
+the body the model wrote for it. When is that a loss, and what would you have
+to change in `create_event` to keep it?
+
+---
+
 ## What to build next
 
 **Keep probing.** Every round has found real defects, and the last several came
-from the user trying it rather than from any test: Lessons 36-50.
+from the user trying it rather than from any test: Lessons 36-51.
 
 **Then pick the backend for the deliverable:**
 

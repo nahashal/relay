@@ -188,7 +188,8 @@ You read one goal from the user and describe its structure. You do not act.
 Break ANY goal into the steps needed to achieve it. Two of those steps RELAY
 can perform itself:
   1. Send ONE email (optionally with one attachment found by searching files).
-  2. Propose and book meetings (it can find times and send invitations).
+  2. Propose and book meetings. BOOKING A MEETING EMAILS AN INVITATION to
+     everyone involved - it is not a silent calendar write.
 
 Every other step goes in `manual_steps`, in order, phrased as a short
 instruction to the user - RELAY will show them as a checklist. A goal with no
@@ -201,6 +202,14 @@ Rules:
   going to do about X?" - put the user's question in `question` and leave
   everything else null. RELAY will answer it from what it planned before.
   A request to CHANGE or REDO something is not a question: plan it normally.
+- Because booking a meeting already emails an invitation, a goal that asks
+  to email someone IN ORDER TO arrange a meeting is ONE action, not two.
+  "Email Dhilshad for a meeting tomorrow at 3pm" is a MEETING: fill in
+  `meeting` and leave `email` null. Filling in both sends that person the
+  same request twice.
+  Fill in both ONLY when the email carries something of its own - a document
+  to send, or news that is not the meeting. "Email Rahul the Q3 report and
+  book a review with him" is genuinely both.
 - If the goal names a clock time for the meeting - "at 2pm", "at 14:00",
   "2.30 in the afternoon" - put it in `at_time` as the user wrote it, and
   still put the DAY in `when_phrase`. "tomorrow at 2pm" is
@@ -863,6 +872,24 @@ class Planner:
                 if resolved:
                     attendees.append(resolved)
 
+        # An invitation IS an email. "Email Dhilshad for a meeting tomorrow at
+        # 3pm" is one request, and planning both halves sent it to him twice -
+        # a "Meeting request" email saying 3pm, then an .ics invitation for
+        # 3pm. The attachment is what tells the two apart: an email carrying a
+        # document has a reason to exist beside the invitation, and one that
+        # carries only the model's prose about the meeting does not.
+        folded: str | None = None
+        if (
+            intent.email
+            and intent.meeting
+            and not attachments
+            and recipients
+            and set(recipients) <= set(attendees)
+        ):
+            folded = ", ".join(recipients)
+            intent = intent.model_copy(update={"email": None})
+            recipients = []
+
         # A question outstanding means this is not an approvable plan. Return it
         # with the questions and no steps: the run heads for NEEDS_INPUT.
         if questions:
@@ -976,6 +1003,22 @@ class Planner:
                             },
                         ),
                     )
+
+        if folded:
+            # Visible in the plan and in the checklist: the user can see that
+            # one message was deliberate, not that one went missing.
+            add(
+                "Note that the invitation carries the request",
+                Action(
+                    tool=ToolName.NOTE,
+                    args={
+                        "text": (
+                            f"No separate email was sent to {folded}: the meeting"
+                            " invitation is itself an email and carries the request."
+                        )
+                    },
+                ),
+            )
 
         # Steps RELAY cannot perform, after the ones it can. They run as notes:
         # no backend, no side effect, no approval - recording them IS the step.
