@@ -45,6 +45,10 @@ class ToolName(StrEnum):
     #: the rest become this - visible in the plan, reported at the end, and
     #: never silently dropped or faked.
     NOTE = "note"
+    #: An answer drawn from past runs. Reads memory, changes nothing, so it
+    #: needs no approval - RELAY telling you what it already planned is not
+    #: an action. See LESSON 48.
+    ANSWER = "answer"
     SEND_EMAIL = "send_email"
     CREATE_EVENT = "create_event"
     FINISH = "finish"

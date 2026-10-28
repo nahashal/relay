@@ -24,6 +24,7 @@ from relay.config import load_env  # noqa: E402
 load_env()
 
 from relay.audit import AuditLog  # noqa: E402
+from relay.memory import Memory  # noqa: E402
 from relay.loop import Awaiting, new_loop  # noqa: E402
 from relay.planner import (  # noqa: E402
     Choices,
@@ -70,6 +71,9 @@ def main(goal: str = DEFAULT_GOAL, reject: bool = False) -> int:
         backend=backend,
         reader=reader,
         today=dt.date(2026, 10, 27),  # fixed, so the dates match the build plan
+        # The demo uses a throwaway database, so it remembers only this run -
+        # enough to show the mechanism, not enough to answer about last week.
+        memory=Memory(db),
     )
     loop = new_loop(planner, AuditLog(db), run_id="demo")
 

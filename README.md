@@ -38,6 +38,7 @@ relay/
   loop.py          the state machine: plan, approve, act, verify, stop
   planner.py       goal -> GoalIntent (model) -> resolved Plan (tools only)
   dates.py         "next week" -> Mon 2 - Fri 6 Nov 2026, in the user's timezone
+  memory.py        past runs, read back from the audit log - storage was already there
   approvals.py     action hashing, HMAC tokens, the void-on-change rule
   audit.py         SQLite: runs, plans, approvals, tool_calls
   executor.py      the ONE door to a side effect: budget, gate, replay, spend, execute, verify
@@ -230,6 +231,37 @@ The offline reader has a blocklist as a backstop, deliberately narrow: an earlie
 `call`, and *"set up a 45-minute **call** with Anu"* was promptly refused as a phone call. A list of
 bare verbs cannot tell a noun from a verb, which is why the model with an explicit capability list
 does the real work.
+
+## Asking about past runs
+
+Plan a 15-day workout on the 1st; on the 10th ask **"which day of my workout am
+I on?"** and RELAY answers from what it planned, counting from the date it
+planned it.
+
+```
+STOPPED: done
+SUMMARY: You are on day 10 of your 15-day workout routine. The plan was made on
+         Wed 1 Oct 2026, 9 days ago, which puts you in the cardio block.
+```
+
+There is no second store. `memory.py` reads the audit log, which has recorded
+every goal, plan and tool call since the first run — built as evidence, and one
+query away from being a feature (Lesson 47).
+
+Three things it is careful about:
+
+- **A question is not a goal** (Lesson 48). "what is my medication *schedule*?"
+  must not be planned as a request just because it contains the word "schedule".
+- **An answer is still a run.** It plans one `answer` step and one `finish`
+  step, so it appears in the audit log like everything else rather than
+  returning early and leaving no trace.
+- **Not every run is a memory** (Lesson 49). A run only counts once it has
+  recorded real work — a step written down, an email sent, a meeting arranged.
+  Without that rule a question recalled *itself*, because the run row is written
+  before planning starts.
+
+A question never reaches the approval gate, because answering is not acting:
+`answer` is not in `SIDE_EFFECT_TOOLS`.
 
 ## Fallback models
 

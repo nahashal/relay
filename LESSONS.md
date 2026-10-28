@@ -932,10 +932,97 @@ first, and what would you wrongly have concluded from it alone?
 
 ---
 
+## Lesson 47 — The memory was already there; only the retrieval was missing
+
+The ask was "can RELAY remember?", and the obvious shape of the answer is a new
+store: embeddings, a vector index, a summarisation pass over each conversation.
+
+None of that got built, because the audit log already held it. Every run since
+the first one has written its goal, its plan, its tool calls and its stop state
+to SQLite. That was built as **evidence** — the thing the eval report counts
+"zero unapproved side effects" from. Read a different way it is a complete
+record of what the user asked for and what RELAY planned, which is exactly what
+remembering means here.
+
+So `memory.py` adds no storage. It adds a way to ask the storage a question:
+keyword search weighted so a rare word counts for more than a common one, and
+calendar-day arithmetic so "which day am I on?" can be answered at all.
+
+The general move: before building a store, check whether something you built
+for another reason is already recording what you need. Logs, audit trails and
+caches are often one query away from being a feature.
+
+**Exercise 47.** Keyword search will fail on "what was that thing I was going to
+do about the flat?". What would you reach for first, and what does it cost you
+in explainability when it recalls the wrong run?
+
+---
+
+## Lesson 48 — A question is not a goal
+
+"Email Rahul the report" and "what is my workout for today?" both arrive in the
+same box. The first is work. The second is a request for *information about*
+work — and planning it as a goal produces steps nobody asked for.
+
+Telling them apart looked like a word list, and it was, twice, wrongly:
+
+- First try: treat anything beginning "what/when/which" as a question, unless
+  it contains an action word (`email`, `send`, `book`, `schedule`, `meet`).
+  That refused **"what is my medication *schedule*?"** — the noun read as a verb.
+  The same mistake as an earlier round, where "a 45-minute **call**" was refused
+  as a phone call.
+- Second try: an action word only counts in a *verb position* — after a modal,
+  an auxiliary, or "to". "what time should I **email** Rahul" is a request;
+  "my medication **schedule**" is not.
+
+The answer is a plan too — one `answer` step and one `finish` step. It could
+have been a bare string returned early, and that would have been the one thing
+RELAY does with no record of it. Routing it through the loop costs a few lines
+and keeps the audit log complete.
+
+**Exercise 48.** `_ASKS_FOR_ACTION` fails on "can you tell me what I planned?" —
+"can you tell" is a verb position, but nothing is being asked for. Does that
+matter here, and how would you find out rather than guess?
+
+---
+
+## Lesson 49 — What was recorded is not what is worth remembering
+
+Asking "what is my medication schedule?" came back with *"your request for a
+medication schedule was left unfinished."* RELAY had recalled **the question
+itself**, three seconds old.
+
+The run row is written with the goal before planning begins, so by the time the
+planner searched memory, the current run was in the table looking exactly like a
+past one. Worse, every previous question was in there too, competing with the
+plans they had asked about.
+
+Both are the same condition — *a run with no completed work* — so the fix is one
+clause. Getting that clause right took two attempts, and the second is the
+lesson:
+
+```sql
+-- excluded 'answer' ... but every run also records a 'finish', so
+-- question runs stayed memorable and the hole stayed open
+AND tool != 'answer'
+
+-- names what work IS, so a tool added later is not work until it is listed
+AND tool IN ('note', 'send_email', 'create_event')
+```
+
+A blacklist has to be right about every value that will ever exist. A whitelist
+only has to be right about the ones that count.
+
+**Exercise 49.** The empty `relay/relay.db` created during this round came from
+a script pointed at the wrong path. The code silently made a new database
+instead of failing. When is that the right behaviour, and when is it this one?
+
+---
+
 ## What to build next
 
 **Keep probing.** Every round has found real defects, and the last several came
-from the user trying it rather than from any test: Lessons 36-46.
+from the user trying it rather than from any test: Lessons 36-49.
 
 **Then pick the backend for the deliverable:**
 

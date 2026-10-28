@@ -442,10 +442,15 @@ class AgentLoop:
     def _report(self) -> str:
         """What actually happened, read off the results rather than assumed."""
         acted: list[str] = []
+        answers: list[str] = []
         for _, result in sorted(self.results.items()):
             if not isinstance(result, dict):
                 continue
-            if result.get("dry_run"):
+            if "answer" in result:
+                # An answer is the whole point of the run, so it leads the
+                # report rather than being appended after "Done:".
+                answers.append(str(result["answer"]))
+            elif result.get("dry_run"):
                 # Approved and rehearsed. Saying "nothing needed doing" here
                 # told the user their approval had no effect, which is a worse
                 # lie than saying it was sent.
@@ -459,7 +464,7 @@ class AgentLoop:
             elif "event_id" in result:
                 acted.append("the meeting was booked")
 
-        parts: list[str] = []
+        parts: list[str] = answers[:]
         if acted:
             parts.append("Done: " + ", ".join(acted) + ".")
         pending = self.checklist()

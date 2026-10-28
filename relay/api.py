@@ -35,6 +35,7 @@ from .backends import (
     make_backend,
 )
 from .loop import AgentLoop, Awaiting, BindingError, RunStatus, new_loop
+from .memory import Memory
 from .planner import (
     Choices,
     GeminiIntentReader,
@@ -83,7 +84,9 @@ def _make_planner(backend: Any) -> Planner:
     reader: IntentReader = RegexIntentReader()
     if os.environ.get("GEMINI_API_KEY") and os.environ.get("GEMINI_MODEL"):
         reader = GeminiIntentReader()
-    return Planner(backend=backend, reader=reader)
+    # The memory reads the same database the audit log writes, so a run becomes
+    # recallable the moment it finishes - no separate store to keep in step.
+    return Planner(backend=backend, reader=reader, memory=Memory(get_audit().path))
 
 
 # --------------------------------------------------------------------------- #

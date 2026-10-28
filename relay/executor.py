@@ -184,6 +184,10 @@ class Executor:
             case ToolName.ASK_USER:
                 # ask_user has no backend: it is a signal to the loop to pause.
                 return {"question": str(a["question"]), "awaiting_answer": True}
+            case ToolName.ANSWER:
+                # The answer was worked out while planning; running the step is
+                # how it reaches the report, the audit log and the UI.
+                return {"answer": str(a["text"])}
             case ToolName.NOTE:
                 # Nothing to execute: recording it IS the step. No backend, no
                 # side effect, so no approval - the user does this one.
