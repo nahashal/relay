@@ -16,6 +16,7 @@ Run it:  .venv/Scripts/python.exe scripts/check_setup.py
 from __future__ import annotations
 
 import os
+import time
 import pathlib
 import sys
 
@@ -155,7 +156,7 @@ def check_gemini(c: Check) -> None:
         )
         from google.genai import types
 
-        working = []
+        working: list[tuple[float, str]] = []
         candidates = [
             m for m in sorted(models)
             if "flash" in m and not any(x in m for x in ("image", "tts", "preview"))
@@ -164,18 +165,30 @@ def check_gemini(c: Check) -> None:
             if name == wanted or len(working) >= 2:
                 continue
             try:
+                # The probe is already a real call, so time it. A fallback is
+                # only reached when the primary has ALREADY failed, so its
+                # latency lands on top of a wait the user has endured once.
+                started = time.perf_counter()
                 client.models.generate_content(
                     model=name,
                     contents="Reply with the single word: ok",
                     config=types.GenerateContentConfig(temperature=0, max_output_tokens=10),
                 )
-                working.append(name)
-                print(f"          {name:26} usable")
+                took = time.perf_counter() - started
+                working.append((took, name))
+                print(f"          {name:26} usable ({took:.1f}s)")
             except Exception as exc:
                 why = "paid-only" if "limit: 0" in str(exc) else str(exc).split(".")[0][:34]
                 print(f"          {name:26} no ({why})")
         if working:
-            print(f"\n        add to .env:  GEMINI_FALLBACK_MODELS={','.join(working)}")
+            # Fastest first: one sample each is crude, but a 2x difference is
+            # not noise, and the alternative is alphabetical order - which is
+            # not a fact about anything.
+            working.sort()
+            names = ",".join(name for _, name in working)
+            print(f"\n        add to .env:  GEMINI_FALLBACK_MODELS={names}")
+            print("        (fastest first - a fallback's wait is added to the"
+                  " failure that caused it)")
 
 
 def check_brevo(c: Check) -> None:
