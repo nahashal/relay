@@ -73,17 +73,40 @@ tests/
 
 ## Run it
 
-Python 3.12.10 and a `.venv` are already set up here. To run the suite:
+Needs Python 3.12 (`winget install Python.Python.3.12` on Windows).
 
 ```bash
+python -m venv .venv
+.venv/Scripts/python.exe -m pip install -r requirements.txt
 .venv/Scripts/python.exe -m pytest -q
 ```
 
-From scratch on another machine (`winget install Python.Python.3.12` first):
+The tests need no configuration at all - they pin themselves to the mock
+backend and strip any credentials from the environment, so the suite behaves
+the same on a machine with keys and one without.
+
+### Before the first real run
+
+Two files are deliberately **not** in the repository, because they hold your
+data rather than the project's. Copy the templates:
 
 ```bash
-python -m venv .venv && .venv/Scripts/python.exe -m pip install -r requirements.txt && .venv/Scripts/python.exe -m pytest -q
+cp .env.example .env                      # then fill in the keys you need
+cp contacts.example.json contacts.json    # who RELAY can email
 ```
+
+Without `contacts.json`, `RELAY_BACKEND=local` stops with *"no contacts file"* -
+which is correct, but puzzling if you have not read this far.
+
+Then check what is actually working, rather than guessing:
+
+```bash
+.venv/Scripts/python.exe scripts/check_setup.py
+```
+
+It is read-only: it lists models, reads your own profile and counts files, and
+sends nothing. Everything it finds wrong prints a `fix:` line with the next
+action.
 
 See the example goal run end to end:
 
